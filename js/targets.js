@@ -551,9 +551,18 @@ G.buildEnemy = function(type, o = {}){
       }
       SH.add(M(rbox(0.06, 0.03, 4.6, 0.01), redM, s*3.9, 0.23, -0.5)).rotation.y = s*0.98;                          // thin red Varn edge line
     }
+    // Hover: the fighter nose folds away and the flying wing's own nose section takes its place: the same apex, hump and four slit windows as the jet
+    const CK = new THREE.Group(); F.root.add(CK); u.cock = CK; u.cockK = 0; CK.scale.setScalar(0.02); CK.visible = false;
+    CK.add(M(plate([[0, 4.5], [1.7, 3.4], [1.7, 0.6], [-1.7, 0.6], [-1.7, 3.4]], 0.3, 0.1), B2, 0, -0.05, 0));
+    CK.add(M(plate([[0, 4.4], [1.6, 3.35], [1.6, 0.7], [-1.6, 0.7], [-1.6, 3.35]], 0.05, 0.01), B2d, 0, -0.22, 0));
+    { const h = M(new THREE.SphereGeometry(1, 24, 12, 0, Math.PI*2, 0, Math.PI/2), B2, 0, 0.08, 2.2); h.scale.set(1.15, 0.5, 2.0); CK.add(h); }
+    for (const x of [-0.42, -0.16, 0.16, 0.42]) { const w = M(rbox(0.3, 0.05, 0.42, 0.02), glass, x, 0.42 - Math.abs(x)*0.25, 3.55 - Math.abs(x)*0.5); w.rotation.x = -0.4; w.rotation.y = -x*0.6; CK.add(w); }
+    CK.add(M(rbox(0.06, 0.03, 1.9, 0.01), redM, 0.95, 0.12, 3.5)).rotation.y = 0.98; CK.add(M(rbox(0.06, 0.03, 1.9, 0.01), redM, -0.95, 0.12, 3.5)).rotation.y = -0.98;
     u.sync = dt => {   // the shell is whole in jet mode and folds away as the fighter parts unfold (and back again)
       const want = F.mode === 'jet' ? 1 : 0; u.shellK += Math.sign(want - u.shellK)*Math.min(Math.abs(want - u.shellK), dt ? dt/0.6 : 1);
       const k = u.shellK*u.shellK*(3 - 2*u.shellK); SH.visible = k > 0.02; SH.scale.set(Math.max(0.02, k), Math.max(0.02, 0.4 + 0.6*k), Math.max(0.02, k));
+      const wc = F.mode === 'hover' ? 1 : 0; u.cockK += Math.sign(wc - u.cockK)*Math.min(Math.abs(wc - u.cockK), dt ? dt/0.6 : 1);
+      const c = u.cockK*u.cockK*(3 - 2*u.cockK); CK.visible = c > 0.02; CK.scale.setScalar(Math.max(0.02, c));
     };
   } else if (type === 'skyflak') {
     // twin-barrel flak turret on a ring mount; u.head turns, u.muzzle is the gun tip
