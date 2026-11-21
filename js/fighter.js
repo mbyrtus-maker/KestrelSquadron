@@ -61,8 +61,8 @@ const STYLE = {
   gyrfalcon:{wing:'forward', span:5.2, nose:1.15, bodyW:1.0,  num:'X01', canards:true},
   osprey:   {wing:'cranked', span:5.9, nose:1.1,  bodyW:1.15, num:'X4',  canards:true, big:true},
   // the Varn Harbinger (volume 3 boss): a bomber planform on the same three-mode chassis, built at three times the size in targets.js
-  harbinger:{wing:'bomber',  span:7.4, nose:1.3,  bodyW:1.3,  num:'V01', big:true, armor:true, varn:true,
-    pose:{mech:{wingL:{p:[1.0,5.0,-1.5], r:[15,-10,-40]}, wingR:{p:[-1.0,5.0,-1.5], r:[15,10,40]}},   // the broad wing hangs off the back like a cape instead of standing up
+  harbinger:{wing:'bomber',  span:6.05, nose:1.3,  bodyW:1.3,  num:'V01', big:true, armor:true, varn:true,
+    pose:{mech:{wingL:{p:[1.1,5.1,-1.5], r:[10,-25,-28]}, wingR:{p:[-1.1,5.1,-1.5], r:[10,25,28]}},   // the broad wing hangs off the back like a cape instead of standing up
       // jet: every fighter part folds away inside the flying-wing shell (built in targets.js), and unfolds out of it on transformation
       jet:{body:{p:[0,0,0], s:0.5}, nose:{p:[0,0,1.2], s:0.01}, wingL:{p:[1.15,0.12,-0.7], s:0.01}, wingR:{p:[-1.15,0.12,-0.7], s:0.01},
         legL:{p:[0.85,-0.25,0.4], s:0.01}, legR:{p:[-0.85,-0.25,0.4], s:0.01}, gunpod:{p:[0,-0.6,-1.0], s:0.01}}}}
@@ -73,7 +73,7 @@ const PLAN = {
   delta:  s => [[0,2.6],[s*4.7,-1.5],[s*4.7,-2.05],[0,-1.9]],
   forward:s => [[0,0.9],[s*5.2,1.6],[s*5.2,0.7],[0,-1.8]],
   cranked:s => [[0,2.8],[s*1.9,0.4],[s*5.9,-1.1],[s*5.9,-1.95],[0,-1.95]],
-  bomber: s => [[0,4.4],[s*1.5,2.6],[s*7.4,-2.1],[s*7.4,-2.9],[s*5.7,-2.3],[s*4.3,-3.3],[s*2.3,-2.6],[0,-3.5]]   // blended arrowhead flying wing: kinked leading edge, saw-tooth trailing edge
+  bomber: s => [[0,4.25],[s*6.05,0.3],[s*6.05,-0.3],[s*3.65,-0.9],[s*2.05,-2.2],[s*0.35,-0.9],[0,-1.3]]   // one half of the Harbinger's flying wing (its jet-form outline, measured from the wing root)
 };
 
 /* ---------- Textures ---------- */

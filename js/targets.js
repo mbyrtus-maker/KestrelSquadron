@@ -490,9 +490,9 @@ G.buildEnemy = function(type, o = {}){
     // The Harbinger (volume 3 boss): a Varn heavy bomber built on a captured three-mode chassis, three times a Kestrel's size.
     // It uses the Kestrel's transformation rig (jet, hover, mech) with a broad bomber wing, four underslung engines,
     // a belly bomb bay, a dorsal gun turret, twin canted tails, a glazed bombardier chin and Varn red optics and exhaust.
-    const F = G.buildFighter({id:'harbinger', color:0x7f848c, trim:0x4e5170, lasers:4}), P = F.P;
+    const F = G.buildFighter({id:'harbinger', color:0x6c7179, trim:0x4e5170, lasers:4}), P = F.P;
     F.setMissiles(0); g.add(F.root); F.root.scale.setScalar(3); u.F = F;
-    const hullM = new THREE.MeshStandardMaterial({color:0x7f848c, roughness:0.58, metalness:0.3}), slateM = new THREE.MeshStandardMaterial({color:0x4e5170, roughness:0.55, metalness:0.35});
+    const hullM = new THREE.MeshStandardMaterial({color:0x6c7179, roughness:0.58, metalness:0.3}), slateM = new THREE.MeshStandardMaterial({color:0x4e5170, roughness:0.55, metalness:0.35});
     const redM = new THREE.MeshStandardMaterial({color:0xb2322a, roughness:0.55, metalness:0.2}), darkM = new THREE.MeshStandardMaterial({color:0x2a2d33, roughness:0.6, metalness:0.5});
     const exh = new THREE.MeshBasicMaterial({color:0xff7a3a}), glass = new THREE.MeshStandardMaterial({color:0x2a0b08, emissive:0xff3a1a, emissiveIntensity:0.5, roughness:0.1, metalness:0.4});
     F.root.traverse(o => { if (!o.isMesh || !o.material) return; const mt = o.material;
@@ -500,20 +500,17 @@ G.buildEnemy = function(type, o = {}){
       else if (mt.isMeshBasicMaterial && mt.color.getHex() === 0xcff4ff) o.material = exh;
       else if (mt.isMeshPhysicalMaterial) { o.material = mt.clone(); o.material.color.setHex(0x3a1410); } });   // smoked red canopy
     F.glow.color.setHex(0xff8a3a);
-    const pod = (Gp, x, y, z, r, len, s, finOn) => {   // a big engine pod: body, squared intake, red ring, glowing nozzle, optional canted fin
-      Gp.add(M(cyl(r, r*1.08, len, 18), hullM, x, y, z)); Gp.add(M(rbox(r*2.1, r*1.3, r*1.1, r*0.3), slateM, x, y + r*0.05, z + len/2 + r*0.3));
-      Gp.add(M(rbox(r*1.5, r*0.7, 0.1, 0.03), m.rub, x, y + r*0.05, z + len/2 + r*0.88)); Gp.add(M(cyl(r*1.04, r*1.04, 0.16, 18), redM, x, y, z + len*0.12));
-      Gp.add(M(cyl(r*0.95, r*0.8, 0.5, 18), darkM, x, y, z - len/2 - 0.2)); Gp.add(M(new THREE.CircleGeometry(r*0.68, 16).rotateY(Math.PI), exh, x, y, z - len/2 - 0.46));
-      if (finOn) { const f = M(fin([[0, 0], [-1.1, 0], [-1.6, 1.2], [-0.95, 1.2]], 0.09, 0.02), slateM, x + s*r*0.4, y + r*0.7, z - len*0.15); f.rotation.y = -Math.PI/2; f.rotation.z = -s*0.32; Gp.add(f); }
-    };
+    const B2 = new THREE.MeshStandardMaterial({color:0x6c7179, roughness:0.62, metalness:0.35}), B2d = new THREE.MeshStandardMaterial({color:0x50545b, roughness:0.7, metalness:0.3});
+    // hover and mech wings: each is one half of the jet's flying wing (same planform, colour and buried engines), so the forms match
     for (const [n, s] of [['wingL', 1], ['wingR', -1]]) {
       const W = P[n];
-      W.add(M(plate([[0, 4.3], [s*1.45, 2.5], [s*7.3, -2.05], [s*7.3, -2.6], [0, -2.0]], 0.1, 0.03), slateM, 0, -0.12, 0));   // slate underside
-      pod(W, s*1.25, 0.55, -0.2, 0.56, 3.8, s, false); pod(W, s*2.55, 0.48, -0.9, 0.5, 3.4, s, true);   // the engines cluster on top beside the spine
-      W.add(M(rbox(2.6, 0.3, 3.4, 0.12), hullM, s*1.9, 0.18, -0.6));                                    // fairing under the pods
-      const tf = M(fin([[0, 0], [-1.5, 0], [-2.0, 1.3], [-1.2, 1.3]], 0.1, 0.03), hullM, s*7.35, 0.05, -1.4); tf.rotation.y = -Math.PI/2; tf.rotation.z = -s*0.25; W.add(tf);   // upturned wingtip fin
-      W.add(M(rbox(0.22, 0.06, 2.2, 0.02), redM, s*6.0, 0.09, -1.6)); W.add(M(rbox(0.5, 0.05, 0.5, 0.02), redM, s*4.8, 0.09, -0.6));
-      for (const z of [0.6, -0.4, -1.4]) { const st = M(rbox(0.08, 0.05, 1.0, 0.01), slateM, s*(3.6 - z*0.9), 0.09, z); st.rotation.y = s*0.9; W.add(st); }   // panel lines
+      W.add(M(plate([[0, 4.2], [s*5.95, 0.32], [s*5.95, -0.25], [0, -1.25]], 0.05, 0.01), B2d, 0, -0.1, 0));   // darker belly panel
+      for (const x of [0.55, 1.45]) {                                                                         // buried engines: dorsal intake humps and slot exhausts
+        const hm = M(new THREE.SphereGeometry(1, 16, 8), B2, s*x, 0.06, 0.9 - x*0.25); hm.scale.set(0.5, 0.22, 1.6); W.add(hm);
+        const ik = M(rbox(0.62, 0.16, 0.12, 0.04), m.rub, s*x, 0.21, 2.1 - x*0.25); ik.rotation.x = -0.25; W.add(ik);
+        W.add(M(rbox(0.7, 0.08, 0.3, 0.02), exh, s*x, 0.02, -0.85 - (x > 1 ? 0.55 : 0)));
+      }
+      W.add(M(rbox(0.06, 0.03, 4.6, 0.01), redM, s*2.75, 0.11, 0.2)).rotation.y = s*0.98;                    // the same thin red edge line as the jet
     }
     // nose: a blended chine on each side of the canopy, a glazed bombardier chin and red sensor lights
     for (const s of [1, -1]) { const ch = M(plate([[0, 0.6], [s*0.9, -0.6], [s*0.9, -1.6], [0, -1.6]], 0.12, 0.03), hullM, s*0.75, -0.15, 2.6); P.nose.add(ch); P.nose.add(M(rbox(0.16, 0.16, 0.16, 0.04), redM, s*0.95, -0.1, 2.0)); }
@@ -535,7 +532,6 @@ G.buildEnemy = function(type, o = {}){
     P.gunpod.scale.set(1.25, 1.25, 1.4);
     // Jet form: a B-2-style flying wing. One blended shell with a straight swept leading edge, a W-shaped saw-tooth trailing edge,
     // a low central hump with a slit windscreen, engines buried in the wing (dorsal intakes, slot exhausts) and no fins at all.
-    const B2 = new THREE.MeshStandardMaterial({color:0x6c7179, roughness:0.62, metalness:0.35}), B2d = new THREE.MeshStandardMaterial({color:0x50545b, roughness:0.7, metalness:0.3});
     const SH = new THREE.Group(); F.root.add(SH); u.shell = SH; u.shellK = 1;
     const outline = [[0, 4.3], [7.2, -0.4], [7.2, -1.0], [4.8, -1.6], [3.2, -2.9], [1.5, -1.6], [0, -2.7]];
     const full = outline.concat(outline.slice(1, -1).reverse().map(([x, z]) => [-x, z]));
