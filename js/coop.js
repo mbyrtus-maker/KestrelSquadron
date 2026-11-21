@@ -347,7 +347,7 @@ function guestSpawn(g, r){
   if (C.byId(g, r.id)) return;
   const so = r.so, e = G.spawn(g, so.type, so.x, so.z, {netId:r.id, alt:so.alt, yaw:so.yaw, v:so.v, w:so.w, d:so.d, h:so.h, tint:so.tint, tag:so.tag});
   e.hp = r.hp; e.maxHp = r.mx; e.name = r.nm; e.ace = r.ace; e.boss = r.boss; e.bossBar = r.bb; e.task = r.task; e.team = r.team; e.np = null;
-  if (r.bb) g.sovereign = e; if (r.boss) g.hollow = e;
+  if (r.bb) { if (so.type === 'skycarrier') { g.skycarrier = e; e.mesh.rotation.order = 'YXZ'; } else if (so.type === 'colossus') g.sovereign = e; } if (r.boss) g.hollow = e;
   if (!r.a) { e.alive = false; g.scene.remove(e.mesh); }
 }
 function guestStart(m){

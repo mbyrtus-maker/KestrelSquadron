@@ -11,6 +11,11 @@ G.ETYPES = {
   mech:{hp:520, r:8, cy:8, cash:300, xp:40, cls:'mech', name:'Varn walker'},
   reaver:{hp:460, r:9, cy:9, cash:380, xp:50, cls:'mech', name:'Varn Reaver'},
   colossus:{hp:3800, r:17, cy:19, cash:4000, xp:600, cls:'mech', name:'The Sovereign'},
+  // The Ascendant (volume 2 boss). The hull's hit sphere is only its reactor under the belly; its parts are separate targets.
+  skycarrier:{hp:4200, r:22, cy:-21, cash:6000, xp:800, cls:'air', name:'The Ascendant'},
+  skyflak:{hp:380, r:6, cy:2, cash:300, xp:40, cls:'air', name:'Flak turret'},
+  skymis:{hp:600, r:7, cy:3, cash:420, xp:55, cls:'air', name:'Missile battery'},
+  skyengine:{hp:1300, r:12, cy:0, cash:800, xp:90, cls:'air', name:'Lift engine'},
   bunker:{hp:520, r:9, cy:2, cash:160, xp:18, cls:'struct', name:'Bunker'},
   hangar:{hp:900, r:15, cy:6, cash:260, xp:30, cls:'struct', name:'Hangar'},
   tower:{hp:380, r:7, cy:12, cash:180, xp:20, cls:'struct', name:'Comms tower'},
@@ -213,6 +218,88 @@ function smallArms(game, e, dt){
   return true;
 }
 
+/* ---------- The Ascendant (volume 2 boss) ----------
+   A flying carrier circling the battle at about 650 m. Its parts are separate enemies riding on its mesh:
+   flak turrets (bursts of airburst rounds), missile batteries (homing salvos) and six lift engines.
+   The reactor under the belly sits behind armoured petals: it takes no damage until every engine is gone; then the petals open,
+   the carrier slows, sags and lists, and the reactor can be shot. The bow hangar launches pairs of fighters throughout.
+   Flying into the hull hurts and bounces you off. */
+const SK = new V3(), SK2 = new V3();
+G.updateSkyCarrier = function(game, e, dt){
+  const S = e.sc, U = e.mesh.userData, P = game.player;
+  if (e.falling) return;
+  const eng = e.parts.filter(p => p.type === 'skyengine' && p.alive).length;
+  // orbit: slower and lower as engines die
+  const sp = eng ? 26 + 3*eng : 12; S.alt += ((S.alt0 - (6 - eng)*30) - S.alt)*Math.min(1, dt*0.3);
+  S.ang += sp/S.R*dt;
+  e.pos.set(S.cx + Math.sin(S.ang)*S.R, S.alt + Math.sin(e.t*0.4)*3, S.cz + Math.cos(S.ang)*S.R);
+  e.yaw = Math.atan2(Math.cos(S.ang), -Math.sin(S.ang));
+  const roll = -0.06 + (6 - eng)*0.024 + (eng ? 0 : Math.sin(e.t*0.7)*0.03), pitch = eng ? 0 : 0.03;
+  e.mesh.position.copy(e.pos); e.mesh.rotation.set(pitch, e.yaw, roll);
+  e.mesh.updateMatrixWorld(true);
+  for (const p of e.parts) { p.mesh.getWorldPosition(p.pos); p.yaw = e.yaw; }
+  // exposure
+  if (!S.exposed && eng === 0) {
+    S.exposed = true; e.armored = false; e.noLock = false;
+    G.hud.flash('REACTOR EXPOSED · HIT THE BELLY'); G.audio.boom(e.pos, 1.6); P.shake += 0.8;
+    G.hud.radio(G.OFFICER.short, 'All six engines are gone! She’s sagging. The armour under the belly just opened. That glow is the reactor. Put everything you have into it!');
+  }
+  if (U.petals) for (const ph of U.petals) ph.rotation.x += ((S.exposed ? -1.25 : 0) - ph.rotation.x)*Math.min(1, dt*1.5);
+  if (U.glow) U.glow.emissiveIntensity = (S.exposed ? 2.6 : 1.0) + Math.sin(e.t*(S.exposed ? 8 : 2))*(S.exposed ? 0.8 : 0.2);
+  // fighter launches from the bow hangar
+  S.launchCd -= dt;
+  if (S.launchCd <= 0 && !e.noFire) {
+    const out = game.ents.filter(x => x.alive && x.fromCarrier).length;
+    S.launchCd = (S.exposed ? 10 : 15)*S.launchMul;
+    if (out < S.cap) {
+      U.bay.getWorldPosition(SK); const fwd = SK2.set(Math.sin(e.yaw), 0, Math.cos(e.yaw));
+      for (let k = 0; k < 2; k++) { const f = G.spawn(game, 'fighter', SK.x + fwd.z*k*12, SK.z - fwd.x*k*12, {alt:SK.y - 4}); f.fromCarrier = true; f.dir = fwd.clone(); f.zone = null; }
+      G.hud.flash('FIGHTERS LAUNCHING'); G.audio.tone(320, 0.5, 'square', 0.05, 200);
+    }
+  }
+  // the hull is solid: bounce the player off it
+  if (P.alive) {
+    SK.copy(P.pos); e.mesh.worldToLocal(SK);
+    if (Math.abs(SK.x) < 32 && SK.y > -22 && SK.y < 17 && Math.abs(SK.z) < 116) {
+      const up = SK.y > 0; SK.y = up ? 18 : -23; e.mesh.localToWorld(SK); P.pos.copy(SK);
+      P.vel.y = up ? Math.abs(P.vel.y) + 18 : -Math.abs(P.vel.y) - 18; if (P.speed !== undefined) P.speed *= 0.7;
+      P.damage(60, e.pos.clone(), 'impact'); P.shake += 0.6; G.hud.flash('HULL CONTACT');
+    }
+  }
+};
+// The carrier's death: it noses over and falls into the sea in a chain of blasts, then sinks.
+G.skyFall = function(game, dt){
+  const F = game.skyFall, e = F.e, m = e.mesh; F.t += dt;
+  const vy = Math.min(70, 6 + F.t*9); e.pos.y -= vy*dt; e.pos.x += Math.sin(e.yaw)*14*dt; e.pos.z += Math.cos(e.yaw)*14*dt;
+  m.position.copy(e.pos); m.rotation.x = Math.min(0.45, m.rotation.x + dt*0.05); m.rotation.z += dt*0.03;
+  F.boomT -= dt;
+  if (F.boomT <= 0 && !F.splashed) { F.boomT = 0.35 + Math.random()*0.4; SK.set((Math.random() - 0.5)*60, (Math.random() - 0.3)*30, (Math.random() - 0.5)*200); m.localToWorld(SK);
+    game.fx.explosion(SK.clone(), 1.6 + Math.random()*1.4); G.audio.boom(SK, 1.4); }
+  const sea = Math.max(game.world.height(e.pos.x, e.pos.z), 0);
+  if (!F.splashed && e.pos.y < sea + 20) { F.splashed = true;
+    for (let i = 0; i < 8; i++) { SK.set((Math.random() - 0.5)*80, 0, (Math.random() - 0.5)*220); m.localToWorld(SK); SK.y = sea + 4; game.fx.explosion(SK.clone(), 3 + Math.random()*1.5); }
+    G.audio.boom(e.pos, 2.4); game.player.shake += 2.5;
+    game.later(2.5, () => G.hud.radio(G.OFFICER.short, 'She’s in the sea. The Ascendant is gone. Kestrel... every ship in the fleet is sounding its horn.')); }
+  if (F.splashed && e.pos.y < sea - 70) { game.scene.remove(m); game.skyFall = null; }
+};
+G.updateSkyPart = function(game, e, dt){
+  const C = e.carrier, U = e.mesh.userData;
+  if (!C || !C.alive || C.falling) return;
+  if (U.fan) U.fan.rotation.y += dt*(e.alive ? 7 : 0);
+  if (e.type === 'skyengine' || e.noFire) return;
+  const tgt = G.pickTarget(game, e, e.type === 'skyflak' ? 1500 : 2400, false); if (!tgt) return;
+  // aim the head at the target in the mount's own frame
+  if (U.head) { SK.copy(tgt.pos); U.head.parent.worldToLocal(SK); U.head.rotation.y += (Math.atan2(SK.x, SK.z) - U.head.rotation.y)*Math.min(1, dt*3); }
+  if (e.type === 'skyflak') {
+    if (e.burst > 0) { e.burst -= dt; e.burstCd -= dt;
+      if (e.burstCd <= 0) { e.burstCd = 0.11; U.muzzle.getWorldPosition(SK2); shoot(game, e, SK2.clone(), tgt, 560, 14, {color:0xffc070, len:4, w:0.9, err:16, splash:9}); } }
+    else if ((e.cd -= dt) <= 0) { e.burst = 0.7; e.cd = 2.2 + Math.random()*1.5; G.audio.shot(e.pos, 'bolt'); }
+  } else if ((e.cd -= dt) <= 0) {   // missile battery: a pair, then reload
+    e.cd = 7 + Math.random()*3;
+    for (let k = 0; k < 2; k++) game.later(k*0.25, () => { if (!e.alive) return; game.launchMissile(e.pos.clone().add(SK.set(0, 4, 0)), SK2.set((Math.random() - 0.5)*0.5, 1, (Math.random() - 0.5)*0.5).normalize().clone(), tgt, {team:'enemy', speed:130, max:300, turn:1.8, dmg:85*e.dmgMul, life:11}); G.audio.missile(); });
+  }
+};
+
 /* ---------- The Sovereign (chapter 6 boss) ----------
    Slow, heavy walker that always faces its target. Four attacks, each telegraphed:
    beam cannon (capacitor rings glow for 1.5 s, then a 1.4 s stream of heavy bolts), shoulder missile salvo (pods pitch up first),
@@ -321,6 +408,8 @@ G.updateEnemy = function(game, e, dt){
   }
   switch (e.type) {
     case 'colossus': { G.updateSovereign(game, e, dt); break; }
+    case 'skycarrier': { G.updateSkyCarrier(game, e, dt); break; }
+    case 'skyflak': case 'skymis': case 'skyengine': { G.updateSkyPart(game, e, dt); break; }
     case 'tank': case 'apc': case 'aa': case 'sam': {
       const spd = e.type === 'apc' ? 11 : 8;
       if (e.path) {

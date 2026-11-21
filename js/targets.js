@@ -429,6 +429,84 @@ G.buildEnemy = function(type, o = {}){
     }
     g.add(M(rbox(5.6, 1.6, 6.0, 0.4), m.dk, 0, 8.4, -1.0));                                          // leg girdle
     g.scale.setScalar(2.05);
+  } else if (type === 'skycarrier') {
+    // The Ascendant: a Varn flying carrier, about 230 m long and 250 m across the wings (real metres, no scaling).
+    // A dark blade-shaped hull with a straight flight deck, no single wing: six separate armoured fan pods on open truss booms (the fans attach later
+    // as the four engine entities), canted wingtip fins, an underslung command gondola under the bow, stern thrust nozzles,
+    // and the reactor slung under the belly behind armoured petals that open once its engines are gone.
+    const hullM = new THREE.MeshStandardMaterial({color:0x6b7178, metalness:0.55, roughness:0.42, map:m.airC.map, bumpMap:m.air.bumpMap, bumpScale:0.015}),
+      plateM = new THREE.MeshStandardMaterial({color:0x5a6067, metalness:0.5, roughness:0.48, map:m.air.map, bumpMap:m.air.bumpMap, bumpScale:0.015}), deckM = m.dk;
+    const glow = new THREE.MeshStandardMaterial({color:0x2a0805, emissive:0xff4a1a, emissiveIntensity:1.0, roughness:0.4}); u.glow = glow;
+    const win = new THREE.MeshStandardMaterial({color:0x101010, emissive:0xffb070, emissiveIntensity:0.9, roughness:0.3});
+    g.add(M(facet([[-110, 9], [-100, 18], [-60, 21], [40, 20], [78, 15], [104, 6], [118, 0]], 0, 1.4, 0.62), hullM));
+    g.add(M(facet([[-96, 3], [-88, 9], [30, 10], [70, 5], [84, 0]], 0, 1.1, 0.6), plateM, 0, -9, 0));               // ventral keel
+    g.add(M(rbox(40, 2.0, 200, 1.0), deckM, 0, 13.4, -6));                                                          // flight deck
+    for (let i = 0; i < 9; i++) g.add(M(rbox(1.0, 0.3, 10, 0.1), m.white, 0, 14.5, -84 + i*20));
+    for (const sx of [-19, 19]) g.add(M(rbox(0.8, 0.3, 196, 0.1), m.red, sx, 14.5, -6));
+    // no single wing: each side carries three separate armoured fan pods on open truss booms, with sky showing between hull, booms and pods
+    const beam = (x0, z0, x1, z1, y, w, h, mat) => { const L = Math.hypot(x1 - x0, z1 - z0), bm = M(rbox(w, h, L, Math.min(w, h)*0.25), mat, (x0 + x1)/2, y, (z0 + z1)/2); bm.rotation.y = Math.atan2(x1 - x0, z1 - z0); g.add(bm); return bm; };
+    const pod = (x, z, s) => {
+      g.add(M(new THREE.CylinderGeometry(25, 25, 8, 8, 1, true).rotateY(Math.PI/8), hullM, x, 0.5, z));                 // octagonal outer wall
+      g.add(M(new THREE.CylinderGeometry(19, 19, 8, 28, 1, true), deckM, x, 0.5, z));                                  // duct wall
+      for (const y of [4.5, -3.5]) g.add(M(new THREE.RingGeometry(19, 25, 8, 1).rotateX(-Math.PI/2).rotateY(Math.PI/8), plateM, x, y, z));   // rims
+      g.add(M(new THREE.TorusGeometry(19.2, 1.0, 6, 32).rotateX(Math.PI/2), m.red, x, 4.8, z));
+      for (let k = 0; k < 8; k += 2) { const a = Math.PI/8 + k*Math.PI/4, ar = M(rbox(14, 9, 2.4, 0.6), plateM, x + Math.sin(a)*25.6, 0.5, z + Math.cos(a)*25.6); ar.rotation.y = a; g.add(ar); }   // armour bands
+      g.add(M(rbox(2.4, 1.2, 1.2, 0.2), m.lamp, x + s*25.8, 3, z));                                                    // nav light
+    };
+    for (const s of [1, -1]) {
+      pod(s*60, 48, s); pod(s*76, -10, s); pod(s*62, -68, s);
+      g.add(M(plate([[0, 40], [s*12, 26], [s*12, -70], [0, -84]], 4, 1.0), plateM, s*20, -2, 0));                  // hull sponson strake
+      beam(s*28, 56, s*38, 56, 0.5, 4.5, 4, hullM); beam(s*28, 40, s*38, 40, 0.5, 4.5, 4, hullM);                          // forward pod: twin booms
+      beam(s*30, -2, s*54, -2, 0.5, 5, 4, hullM); beam(s*30, -18, s*54, -18, 0.5, 5, 4, hullM);                         // middle pod: twin booms
+      beam(s*28, -60, s*40, -60, 0.5, 4.5, 4, hullM); beam(s*28, -76, s*40, -76, 0.5, 4.5, 4, hullM);                   // aft pod: twin booms
+      beam(s*66, 24, s*70, 14, 0.5, 3, 3, m.dk); beam(s*70, -34, s*67, -44, 0.5, 3, 3, m.dk);                           // braces between pods
+      beam(s*31, -2, s*45, -18, 0.5, 1.2, 1.2, m.dk);                   // truss lacing
+      const tip = M(fin([[0, 0], [-18, 0], [-24, 12], [-12, 12]], 1.6, 0.4), hullM, s*102, 2, -2); tip.rotation.y = -Math.PI/2; tip.rotation.z = -s*0.35; g.add(tip);   // canted fin on the outer pod
+      const can = M(plate([[0, 12], [s*20, -2], [s*22, -12], [0, -8]], 3, 0.8), plateM, s*20, 6, 82); g.add(can);        // small separate canard by the bow
+    }
+    // island: low, raked superstructure with a lit window band
+    g.add(M(rbox(9, 12, 34, 1.5), plateM, 14, 20, -30)); { const r = M(rbox(8, 6, 18, 1.2), plateM, 14, 28, -34); r.rotation.x = -0.12; g.add(r); }
+    g.add(M(rbox(9.2, 1.0, 30, 0.1), win, 14, 23, -30)); g.add(M(vcyl(0.4, 0.6, 12, 6), m.dk, 14, 36, -36)); g.add(M(gem(1.0), m.eye, 14, 42, -36));
+    // command gondola under the bow, with a window strip
+    g.add(M(facet([[-20, 2], [-14, 9], [16, 10], [28, 6], [34, 0]], 0, 1.4, 0.8), hullM, 0, -14, 58));
+    g.add(M(rbox(24, 1.2, 22, 0.2), win, 0, -12, 72));
+    // bow hangar mouth with red guide lights
+    g.add(M(rbox(24, 8, 4, 0.5), m.rub, 0, 3, 104)); for (const x of [-9, -3, 3, 9]) g.add(M(rbox(1.4, 1.4, 0.6, 0.2), m.lamp, x, 7.5, 106));
+    u.bay = new THREE.Object3D(); u.bay.position.set(0, 3, 114); g.add(u.bay);
+    // stern thrust nozzles
+    for (const s of [1, -1]) { g.add(M(cyl(8, 9.5, 12, 14), m.dk, s*14, -1, -110)); for (let k = 0; k < 3; k++) g.add(M(cyl(7 - k*1.6, 7 - k*1.6, 0.5, 14), glow, s*14, -1, -116.3 - k*0.2)); }
+    // reactor under the belly: glowing core inside a ring, six armoured petals that swing open when exposed
+    const R = new THREE.Group(); R.position.set(0, -17, -20); g.add(R); u.reactor = R;
+    R.add(M(vcyl(13, 13, 3, 16), m.dk)); R.add(M(new THREE.SphereGeometry(8, 20, 14), glow, 0, -3, 0));
+    u.petals = [];
+    for (let i = 0; i < 6; i++) { const pv = new THREE.Group(); pv.rotation.y = i*Math.PI/3; R.add(pv); const ph = new THREE.Group(); ph.position.set(0, -1.5, 9); pv.add(ph);
+      ph.add(M(rbox(9, 1.6, 10, 0.4), plateM, 0, 0, -5)); u.petals.push(ph); }
+    // hardpoints (carrier-local): turrets on the deck edges and wing roots, missile cells on the deck, lift fans in the wings
+    u.mounts = {
+      flak:[[-19, 15, 80], [19, 15, 56], [-19, 15, -44], [19, 15, -86], [-76, 5, 64], [76, 5, 64], [-78, 5, -84], [78, 5, -84]],
+      mis:[[0, 15, 90], [0, 15, -70]],
+      eng:[[-60, 0.5, 48], [60, 0.5, 48], [-76, 0.5, -10], [76, 0.5, -10], [-62, 0.5, -68], [62, 0.5, -68]]};
+  } else if (type === 'skyflak') {
+    // twin-barrel flak turret on a ring mount; u.head turns, u.muzzle is the gun tip
+    g.add(M(vcyl(3.6, 4.2, 2.2, 12), m.dk)); const H = new THREE.Group(); H.position.y = 2.0; g.add(H); u.head = H;
+    H.add(M(gem(2.8, 1.2, 0.7, 1.2), m.air)); H.add(M(rbox(3.6, 1.6, 2.6, 0.4), m.khaki, 0, 0.4, 1.8));
+    for (const x of [-0.9, 0.9]) gunAt(H, 'auto', 6, 0.26, m, x, 0.5, 1.6);
+    u.muzzle = new THREE.Object3D(); u.muzzle.position.set(0, 0.5, 8); H.add(u.muzzle);
+  } else if (type === 'skymis') {
+    // missile battery: an armoured box of twelve cells that tilts up to fire
+    g.add(M(rbox(9, 2, 9, 0.6), m.dk)); const H = new THREE.Group(); H.position.y = 2.5; g.add(H); u.head = H;
+    H.add(M(rbox(8, 4.5, 7, 0.6), m.khaki));
+    for (let a = 0; a < 4; a++) for (let b = 0; b < 3; b++) { H.add(M(cyl(0.7, 0.7, 0.3, 10), m.rub, -2.7 + a*1.8, -1.2 + b*1.5, 3.55)); H.add(M(cyl(0.35, 0.35, 0.32, 8), m.red, -2.7 + a*1.8, -1.2 + b*1.5, 3.6)); }
+    H.rotation.x = -0.5;
+  } else if (type === 'skyengine') {
+    // lift fan set into the wing: a horizontal ducted rotor (u.fan spins about the vertical), stator ring, hub, glowing downwash
+    const glow = new THREE.MeshStandardMaterial({color:0x2a0805, emissive:0xff6a2a, emissiveIntensity:1.4, roughness:0.4, side:THREE.DoubleSide}); u.glow = glow;
+    g.add(M(new THREE.CylinderGeometry(18.4, 18.4, 3, 28, 1, true), m.steel, 0, 1, 0));
+    for (let i = 0; i < 6; i++) { const st = M(rbox(36, 0.8, 1.2, 0.2), m.dk, 0, -2, 0); st.rotation.y = i*Math.PI/6; g.add(st); }   // stator spokes below the rotor
+    const fan = new THREE.Group(); fan.position.y = 0.5; g.add(fan); u.fan = fan;
+    for (let i = 0; i < 9; i++) { const pv = new THREE.Group(); pv.rotation.y = i*Math.PI*2/9; fan.add(pv); const bl = M(rbox(2.6, 0.4, 16, 0.1), m.steel, 0, 0, 9); bl.rotation.z = 0.45; pv.add(bl); }
+    fan.add(M(vcyl(4, 4.5, 2.4, 14), m.dk)); fan.add(M(vcyl(2, 2, 2.6, 10), m.red));
+    g.add(M(new THREE.CircleGeometry(17, 28).rotateX(Math.PI/2), glow, 0, -3.6, 0));                                  // downwash glow
   } else if (type === 'reaver') {
     // Varn Reaver: a lean melee walker. Hunched sprinter's hull, a slit visor, and a long blade on each forearm.
     const blade = m.blade || (m.blade = new THREE.MeshStandardMaterial({color:0xb9bec0, roughness:0.25, metalness:0.9})), edge = new THREE.MeshBasicMaterial({color:0xff4a30});

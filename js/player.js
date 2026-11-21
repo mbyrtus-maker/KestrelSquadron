@@ -437,7 +437,7 @@ G.Player = class {
   updateLocks(dt){
     const gnd = this.msl === 'gnd', w = gnd ? {salvo:1, lock:this.w.bomb.lock} : this.w.missile, f = this.mode === 'jet' ? this.fwd(tA) : tA.copy(this.aimDir), maxN = this.painting ? this.paintMax || 1 : gnd ? 1 : Math.max(w.salvo, 2), range = this.st.radar*0.85, c = [];
     for (const e of this.g.ents) {
-      if (!e.alive || e.team !== 'enemy' || (gnd ? e.cls === 'air' : e.cls !== 'air')) continue;   // air-to-air locks aircraft only, air-to-ground everything else
+      if (!e.alive || e.team !== 'enemy' || e.noLock || (gnd ? e.cls === 'air' : e.cls !== 'air')) continue;   // air-to-air locks aircraft only, air-to-ground everything else
       tB.copy(e.pos); tB.y += e.cy; tB.sub(this.pos); const d = tB.length();
       if (d > range || d < 60) continue;
       const a = f.angleTo(tB); if (a < (this.painting ? 0.4 : 0.27)) c.push({e, a: e === this.sticky ? -1 : a});   // sweeping uses a wider cone

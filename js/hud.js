@@ -469,14 +469,16 @@ const H = G.hud = {
     x.textAlign = 'center';
     if (warn && (performance.now() % 600) < 420) { x.font = '600 26px "Saira Extra Condensed", "Arial Narrow", sans-serif'; x.fillStyle = wc; x.fillText(warn, cx, Hh*0.27); }
     // Boss health bar (the Sovereign, Hollow): top centre while the boss is alive and engaged.
-    { const B = [game.sovereign, game.hollow].find(b => b && b.alive);
+    { const B = [game.skycarrier, game.sovereign, game.hollow].find(b => b && b.alive);
       if (B) { const bw = Math.min(560, W*0.5), bx = cx - bw/2, by = 58, f = Math.max(0, B.hp/B.maxHp), half = B.type === 'colossus';
         x.save(); x.globalAlpha = 0.92; x.fillStyle = 'rgba(10,12,14,0.55)'; x.fillRect(bx - 4, by - 4, bw + 8, 18);
         x.fillStyle = f < 0.5 ? '#ff5a3c' : '#ffb238'; x.fillRect(bx, by, bw*f, 10);
         if (half) { x.fillStyle = 'rgba(255,255,255,0.6)'; x.fillRect(bx + bw*0.5 - 1, by - 2, 2, 14); }
         x.strokeStyle = 'rgba(255,255,255,0.5)'; x.lineWidth = 1; x.strokeRect(bx, by, bw, 10);
         x.font = '600 15px "Saira Extra Condensed", "Arial Narrow", sans-serif'; x.textAlign = 'center'; x.fillStyle = '#ffe2c0';
-        x.fillText(B.bossBar || (B.boss ? 'HOLLOW' : B.name.toUpperCase()), cx, by - 9); x.restore(); x.textAlign = 'center'; } }
+        let lab = B.bossBar || (B.boss ? 'HOLLOW' : B.name.toUpperCase());
+        if (B.parts) { const n = B.parts.filter(p => p.type === 'skyengine' && p.alive).length; lab += n ? ` · ENGINES ${n}/6 · REACTOR SEALED` : ' · REACTOR EXPOSED'; }
+        x.fillText(lab, cx, by - 9); x.restore(); x.textAlign = 'center'; } }
     if (this.flashT > 0) { this.flashT -= dt; x.font = '600 22px "Saira Extra Condensed", "Arial Narrow", sans-serif'; x.fillStyle = col; x.globalAlpha = Math.min(1, this.flashT); x.fillText(this.flashText, cx, Hh*0.33); x.globalAlpha = 1; }
     if (game.complete && P.alive) { const hold = game.holdRTB && game.holdRTB(); x.font = '600 18px "Saira Extra Condensed", "Arial Narrow", sans-serif'; x.fillStyle = hold ? RED : '#6dff9a'; x.fillText(hold ? 'RED TAILS OVERHEAD · DRIVE HOLLOW OFF BEFORE LANDING' : 'OBJECTIVE COMPLETE · PRESS R TO RETURN TO BASE', cx, 66); }
     x.textAlign = 'left';

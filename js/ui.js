@@ -102,7 +102,8 @@ const bar = (v, lbl) => `<div class="fbar"><span>${lbl}</span><i><i style="width
 const GRADE = {perfect:'Perfect', success:'Success', fail:'Failure'};
 const WSTAT = {active:'Available', captured:'Captured', kia:'Killed in action', locked:'Not yet in the squadron'};
 function arkQuip(st){
-  if (st.ending) return 'The war is over. Don’t get comfortable. I certainly won’t let you.';
+  if (st.ending) return G.ENDINGS[st.ending].vol === 2 ? 'Two wars, two medals, one very tired operations officer.' : 'The war is over. Don’t get comfortable. I certainly won’t let you.';
+  if (st.node === 'v2n1') return 'Six months of peace. I was starting to like it. Sit down, something has come up.';
   if (!st.log.length) return 'You’re late. The briefing is on the table. Read it before you ask me questions I’ve already answered.';
   const last = st.log[st.log.length - 1].grade;
   return last === 'perfect' ? 'Don’t smile at me like that. Read your orders.' : last === 'fail' ? 'We’re not done. Not even close. Next orders are on the table.' : 'New orders. Same rules: you fly, I think, everyone comes home.';
@@ -121,8 +122,9 @@ function storyPanel(){
   h += `<div class="ark-head">${G.portrait(st.ending ? G.ENDINGS[st.ending].mood : 'stern', 'sm')}<div><small>${esc(G.OFFICER.role)}</small><b>${esc(G.OFFICER.name)}</b><p>“${esc(arkQuip(st))}”</p></div></div>`;
   if (st.ending) {
     const E = G.ENDINGS[st.ending];
-    h += `<article class="sortie story"><div class="s-top"><span class="s-tag">Campaign complete</span><span class="threat">${esc(E.grade)}</span></div><h3>${esc(E.title)}</h3>
-      ${E.text(st).map(t => `<p class="s-brief">${esc(t)}</p>`).join('')}<div class="s-foot"><span></span><button class="launch alt" data-story="reset">Replay campaign</button></div></article>`;
+    h += `<article class="sortie story"><div class="s-top"><span class="s-tag">${E.vol === 2 ? 'Volume 2 complete' : 'Volume 1 complete'}</span><span class="threat">${esc(E.grade)}</span></div><h3>${esc(E.title)}</h3>
+      ${E.text(st).map(t => `<p class="s-brief">${esc(t)}</p>`).join('')}<div class="s-foot"><button class="ghost" data-story="reset">Replay from Volume 1</button><button class="launch" data-story="vol2">${E.vol === 2 ? 'Replay Volume 2' : 'Begin Volume 2 · Ascendant'}</button></div></article>`;
+    if (E.vol !== 2) h += `<p class="panel-note">Volume 2 · Ascendant: five new missions. Six months after the armistice, something enormous crosses Cinder Reach. Your wingmen and story choices carry over.</p>`;
   } else {
     const m = G.storyMission(st.node), node = G.STORY[st.node];
     h += `<article class="sortie story"><div class="s-top"><span class="s-tag">${esc(node.chapter)}</span><span class="threat">Mission ${G.storyStep()}</span></div>
@@ -150,9 +152,9 @@ function showBriefing(){
 }
 function showEnding(key){
   const E = G.ENDINGS[key], st = G.save.story;
-  overlay(`<div class="br-grid"><div class="br-por">${G.portrait(E.mood)}<p class="br-name">${esc(G.OFFICER.name)}</p></div><div class="br-text"><small class="br-ch">Campaign complete · ${esc(E.grade)}</small><h2>${esc(E.title)}</h2>
+  overlay(`<div class="br-grid"><div class="br-por">${G.portrait(E.mood)}<p class="br-name">${esc(G.OFFICER.name)}</p></div><div class="br-text"><small class="br-ch">${E.vol === 2 ? 'Volume 2' : 'Volume 1'} complete · ${esc(E.grade)}</small><h2>${esc(E.title)}</h2>
     ${E.text(st).map(t => `<p>${esc(t)}</p>`).join('')}<h4 class="ph">Your war</h4><ol class="slog">${st.log.map(l => `<li><span>${esc(l.title)}</span><b class="grade g-${l.grade}">${GRADE[l.grade]}</b></li>`).join('')}</ol>
-    <div class="ov-actions"><button data-act="close">Back to the hangar</button></div></div></div>`, 'wide brief');
+    ${E.vol !== 2 ? '<p>Volume 2 · Ascendant is now open in the Story tab.</p>' : ''}<div class="ov-actions"><button data-act="close">Back to the hangar</button></div></div></div>`, 'wide brief');
 }
 
 function renderPanel(){
@@ -262,6 +264,7 @@ document.addEventListener('click', e => {
   if (b.dataset.sel) { previewId = null; s.frame = b.dataset.sel; s.damage = 0; G.persist(); buildHangarFighter(); refreshHangar(); return; }
   if (b.dataset.brief) { showBriefing(); return; }
   if (b.dataset.wing) { s.story.wing = b.dataset.wing; G.persist(); if (b.dataset.inbrief) showBriefing(); else renderPanel(); return; }
+  if (b.dataset.story === 'vol2') { G.storyVol2(); renderPanel(); showBriefing(); return; }
   if (b.dataset.story === 'reset') { overlay(`<h2>Replay the campaign?</h2><p>The war starts over from Chapter 1. Your pilot level, money, frames and upgrades all stay.</p><div class="ov-actions"><button class="ghost" data-act="close">Cancel</button><button data-act="sreset">Replay from Chapter 1</button></div>`, 'slim'); return; }
   if (b.dataset.train) { tryLaunch(G.trainingMission()); return; }
   if (b.dataset.launch) { const m = s.board.find(x => x.id === b.dataset.launch); if (m) tryLaunch(m); return; }
@@ -336,7 +339,7 @@ document.addEventListener('click', e => {
   if (k === 'story' && !inM) {   // jump the campaign to any story mission
     const id = b.dataset.node, N = G.STORY[id]; if (!N) return;
     if (!s.story) s.story = G.newStory();
-    s.story.node = id; s.story.ending = null;
+    s.story.node = id; s.story.ending = null; if (N.vol) s.story.vol = N.vol;
     if (N.wing) { s.story.roster[N.wing] = 'active'; s.story.wing = N.wing; }
   }
   if (k === 'fix') { s.damage = 0; if (inM) { const P = G.game.player; P.hp = P.maxHp; P.mis = P.maxMis; P.bombs = P.maxBombs; P.flares = P.st.flares; P.fuel = P.st.fuel; P.F.setMissiles(1); } }

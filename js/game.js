@@ -73,6 +73,7 @@ G.Game = class {
     for (const e of this.ents) if (e.alive && e.team === 'enemy') G.updateEnemy(this, e, dt);
     this.updateBullets(dt); this.updateMissiles(dt); this.updateBombs(dt); this.updateFlares(dt);
     this.fx.update(dt); this.tracers.draw(this.bullets);
+    if (this.skyFall) G.skyFall(this, dt);
     for (let i = this.dying.length - 1; i >= 0; i--) {
       const d = this.dying[i]; d.t += dt; d.U.mixer.update(dt);
       if (d.t > 1.2 && !d.charred) { d.charred = true; d.mesh.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) { m.color.multiplyScalar(0.28); if (m.emissive) m.emissive.setHex(0); } }); }
@@ -233,6 +234,10 @@ G.Game = class {
   }
   damageEnt(e, amt, by, info){
     if (!e.alive) return;
+    if (e.armored) {   // the Ascendant's reactor: sealed behind its petals until the engines are gone
+      e.hitT = 0.12; if (by === 'player' && this.time - (this.armTip || -99) > 12) { this.armTip = this.time; G.hud.flash('REACTOR SEALED · DESTROY THE SIX ENGINES'); G.audio.impact('metal', 0.6); }
+      return;
+    }
     // Heavy buildings shrug off everything but bombs: other weapons can't take them below 40%.
     if (e.type === 'reaver') {
       const melee = info && info.melee;
@@ -254,7 +259,12 @@ G.Game = class {
     const s = {air:1.6, ground:1.3, mech:1.7, struct:2.4, building:2.0}[e.cls] || 1;
     const c = e.pos.clone(); c.y += e.cy;
     this.fx.explosion(c, s); G.audio.boom(c, s);
-    if (e.cls === 'air') this.scene.remove(e.mesh);
+    if (e.part) { e.mesh.traverse(o => { if (o.isMesh) o.material = CHAR(); }); if (e.mesh.userData.head) e.mesh.userData.head.rotation.x = 0.6;   // wrecked part stays on the hull, smoking
+      this.fx.burner(c, e.type === 'skyengine' ? 200 : 60);
+      if (e.type === 'skyengine' && e.carrier && e.carrier.alive) { const n = e.carrier.parts.filter(p => p.type === 'skyengine' && p.alive).length; G.hud.flash(n ? `ENGINE DOWN · ${n} LEFT` : 'LAST ENGINE DOWN'); } }
+    else if (e.type === 'skycarrier') { e.falling = true; this.skyFall = {e, t:0, boomT:0}; for (const p of e.parts || []) if (p.alive) { p.alive = false; p.mesh.traverse(o => { if (o.isMesh) o.material = CHAR(); }); }
+      G.hud.flash('THE ASCENDANT IS GOING DOWN'); this.player.shake += 2; }
+    else if (e.cls === 'air') this.scene.remove(e.mesh);
     else if (e.mesh.userData.mixer) {
       // Animated walker: play its death, then darken the hull where it fell.
       const U = e.mesh.userData; U.play('Death', 0.15); this.dying.push({U, t:0, mesh:e.mesh});
@@ -283,7 +293,7 @@ G.Game = class {
       if (info && info.melee) this.stats.melee++;
     }
     if (by === 'wing' && Math.random() < 0.5) { const L = this.wing.def.splash; G.hud.radio(this.wing.name, L[Math.floor(Math.random()*L.length)]); }
-    if (e.boss) { G.hud.flash('HOLLOW DOWN'); G.hud.radio('Hollow', 'Not... like this...'); }
+    if (e.boss) { G.hud.flash(`${(e.name || 'Hollow').toUpperCase()} DOWN`); G.hud.radio(e.name || 'Hollow', e.lastWords || 'Not... like this...'); }
     if (e.type === 'colossus') {   // the Sovereign comes apart in a chain of blasts before it falls
       G.hud.flash('THE SOVEREIGN IS DOWN');
       for (let i = 1; i <= 6; i++) this.later(i*0.35, () => { const p = e.pos.clone(); p.x += (Math.random() - 0.5)*30; p.z += (Math.random() - 0.5)*30; p.y += 10 + Math.random()*35; this.fx.explosion(p, 1.4 + Math.random()); G.audio.boom(p, 1.3); this.player.shake += 0.6; });

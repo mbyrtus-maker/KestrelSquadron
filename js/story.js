@@ -209,6 +209,71 @@ N.n6f = {chapter:'Chapter 6 · Last Stand', title:'Last Stand', place:'the Basti
     success:{mood:'stern', say:'We held. Barely. The Bastion is listing, but she’s ours, and Hollow is gone.', next:'end:pyrrhic'},
     fail:{mood:'angry', say:'We’re withdrawing to the southern islands. You did everything I asked. Get some sleep. We’ll be back.', next:'end:retreat'}
   }};
+/* ---------- Volume 2 · Ascendant ----------
+   The Varn break the armistice with a flying carrier. Four missions build toward it; flags from each change the final fight. */
+N.v2n1 = {vol:2, chapter:'Vol. 2 · Chapter 1 · Contrails', title:'Contrails', place:'Cinder Reach', tier:3, pay:4.0, seed:518823, wing:null,
+  tasks:[{kind:'air', n:5, place:'the Cinder Reach skies', at:{x:-2200, z:-3600}}, {kind:'recon', n:3, place:'the Varn launch site'}, {kind:'armor', n:5, place:'the launch site road'}],
+  sides:[{key:'hull'}, {key:'wingman'}], mood:'stern',
+  brief:() => [`Six months of armistice, ${cs()}. Six months of me sleeping past 0500. It was lovely while it lasted.`,
+    'Last night something big crossed Cinder Reach at nine thousand feet. Radar called it a weather front. Weather fronts don’t have contrails shaped like a ship.',
+    'Clear the fighter screen over the Reach, photograph the launch site they’ve built on the ridge, then break the supply column feeding it. I want to know what they are building before it learns to fly.'],
+  radio:{start:'Lantern to Kestrel. Welcome back to the war. Try not to enjoy it.', done:{0:'Screen is down. Get those photos. Low, slow, and pretty.', 1:'Photos in. Analysts are swearing. Kill the supply column.'}},
+  out:{
+    perfect:{mood:'pleased', say:'The photographs show a hull the size of a city block hanging in a lift gantry. They call it the Ascendant. And now I know where they keep the spare parts.', then:'Analysts trace the Ascendant’s parts to a shipyard on Mount Askel.', flags:{v2intel:1}, next:'v2n2'},
+    success:{mood:'stern', say:'They’re building a carrier that flies. Of course they are. Next stop: the yard that builds it.', then:'The Ascendant’s shipyard is found on Mount Askel.', next:'v2n2'},
+    fail:{mood:'angry', say:'We lost the photographs and the column got through. Whatever it is, they just finished it faster.', then:'The Ascendant’s shipyard on Mount Askel works through the night.', flags:{skyEarly:1}, next:'v2n2'}
+  }};
+N.v2n2 = {vol:2, chapter:'Vol. 2 · Chapter 2 · The Gantry Yard', title:'The Gantry Yard', place:'Mount Askel', tier:3, pay:4.2, seed:640177, wing:null,
+  tasks:f => [{kind:'sam', n:f.skyEarly ? 5 : 4, place:'the Askel slopes'}, {kind:'base', n:f.v2intel ? 5 : 6, place:'the gantry yard'}, {kind:'walkers', n:3, place:'the yard gate'}],
+  sides:[{key:'aa'}, {key:'hull'}], mood:'stern',
+  brief:f => ['The gantry yard on Mount Askel builds the Ascendant’s flak turrets and armour. Every crane you drop there is one less gun pointed at you later.',
+    f.v2intel ? 'Your photographs show the yard’s weak points. I’ve marked them. You’re welcome.' : 'We’re going in half blind. Treat everything as armoured.',
+    'SAMs on the slopes first, then the yard, then the walkers guarding the gate. Burn it all.'],
+  radio:{start:'Lantern on station. The slopes are hot. Stay under the ridgeline.', done:{0:'Slopes are clear. The yard is yours.', 1:'Yard’s burning. Gate guard is coming out to play.'}},
+  out:{
+    perfect:{mood:'pleased', say:'The yard is a bonfire. Half her turrets were still sitting on the dock. They’ll stay there.', then:'The Ascendant launches with gaps in her flak screen.', flags:{yardBurned:1}, next:'v2n3'},
+    success:{mood:'stern', say:'The yard is down. Not out. Good enough for today.', then:'The Ascendant launches on schedule.', next:'v2n3'},
+    fail:{mood:'angry', say:'The yard survived, and the Ascendant just cast off from the gantry. Fully armed. Wonderful.', then:'The Ascendant launches early with a full flak screen.', flags:{skyEarly:1}, next:'v2n3'}
+  }};
+N.v2n3 = {vol:2, chapter:'Vol. 2 · Chapter 3 · Sky Raid', title:'Sky Raid', place:'Port Meridian', tier:3, pay:4.3, seed:277410, wing:null,
+  tasks:f => [{kind:'air', n:f.skyEarly ? 7 : 6, place:'Port Meridian', at:{x:2400, z:-3100}}, {kind:'armor', n:5, place:'the Meridian docks'}, {kind:'patrol', n:3, place:'the fuel convoy route', hostiles:true}],
+  sides:[{key:'hull'}, {key:'collat'}], mood:'angry',
+  brief:() => ['The Ascendant’s fighters hit Port Meridian at dawn. They’re covering a landing on the docks, where our fuel convoy is waiting to sail.',
+    'Break the raid, kill the landing force, then fly cover along the convoy route. That fuel is what keeps you in the air for the next two weeks.',
+    'And don’t put a missile through my harbour while you’re at it.'],
+  radio:{start:'Lantern to Kestrel. Meridian is under attack. Go.', done:{0:'Raid is broken. Docks next.', 1:'Docks are ours. Get over the convoy.'}},
+  out:{
+    perfect:{mood:'pleased', say:'Not a single tanker lost. Every pilot on the Bastion is drinking to you tonight. With water. It’s a working night.', then:'The fuel gets through. The Bastion’s squadrons can stay over the Ascendant longer.', flags:{fuelSafe:1}, next:'v2n4'},
+    success:{mood:'stern', say:'Meridian holds. The convoy sailed, a little lighter. It’ll do.', then:'The convoy reaches the Bastion.', next:'v2n4'},
+    fail:{mood:'angry', say:'We lost the convoy. Their carrier owns the sky over Meridian now, and it knows it.', then:'The Ascendant’s air wing grows bolder.', flags:{convoyLost:1}, next:'v2n4'}
+  }};
+N.v2n4 = {vol:2, chapter:'Vol. 2 · Chapter 4 · Picket Line', title:'Picket Line', place:'the Lattice Shelf', tier:3, pay:4.4, seed:903356, wing:null,
+  tasks:[{kind:'sam', n:4, place:'the Lattice Shelf'}, {kind:'base', n:5, place:'the radar picket'},
+    {kind:'rival', n:1, place:'the Shelf', who:'Corvid', escorts:2, hpMul:6, hello:'So you are the one who drowned Hollow. I was his wingman, {cs}. I learned everything he knew.', lastWords:'He said you were good. He was wrong. You are better...'}],
+  sides:[{key:'hull'}, {key:'aa'}], mood:'stern',
+  brief:() => ['The Ascendant hides behind a radar picket on the Lattice Shelf. While it stands, she always knows where we are. Take it down and she’s flying blind.',
+    'SAMs first, then the picket station. And a warning: the Ascendant’s air wing is led by Corvid, Hollow’s old wingman. She’s been asking for you by name.',
+    `Don’t let her get on your tail, ${cs()}. I only just finished the paperwork on the last one.`],
+  radio:{start:'Lantern to Kestrel. Picket line ahead. They know you’re coming.', done:{0:'SAMs are down. Hit the picket.', 1:'Picket is off the air. Red tails, Kestrel! Corvid is inbound.'}},
+  out:{
+    perfect:{mood:'pleased', say:'Corvid is in the sea and the Ascendant is blind. Tomorrow we finish this.', then:'The Ascendant’s air wing loses its leader.', flags:{corvidDown:1}, next:'v2n5'},
+    success:{mood:'stern', say:'The picket is gone and so is Corvid. Rest. Tomorrow is the big one.', then:'The Ascendant turns toward the Bastion.', flags:{corvidDown:1}, next:'v2n5'},
+    fail:{mood:'angry', say:'Corvid got away, and she’s gone back to her carrier. She’ll be waiting for you up there.', then:'Corvid will fly with the Ascendant’s defenders.', flags:{corvidAlive:1}, next:'v2n5'}
+  }};
+N.v2n5 = {vol:2, chapter:'Vol. 2 · Chapter 5 · Ascendant', title:'Ascendant', place:'the open sea off the Bastion', tier:3, pay:4.6, seed:155904, wing:null,
+  tasks:f => [{kind:'air', n:f.convoyLost ? 7 : 5, place:'the carrier screen', at:{x:-600, z:-2600}},
+    {kind:'skycarrier', n:1, place:'the open sea', at:{x:400, z:-5200}, flak:f.yardBurned ? 4 : f.skyEarly ? 8 : 6, launchMul:f.convoyLost ? 0.7 : 1, cap:f.fuelSafe ? 4 : 6, hpMul:f.v2intel ? 1 : 1.2, corvid:!!f.corvidAlive}],
+  sides:[{key:'hull'}, {key:'wingman'}], mood:'stern',
+  brief:f => ['The Ascendant is coming for the Bastion. Two hundred metres of hull, six lift fans, and a reactor in her belly that keeps the whole thing in the sky.',
+    'Break her fighter screen, then go for the ship. Her reactor is sealed while the fans are turning. Kill the flak turrets so you can work, then kill the six lift engines. When the last fan dies, the armour opens. Put everything you have into that reactor.',
+    f.yardBurned ? 'Thanks to the yard, she’s missing half her guns.' : f.skyEarly ? 'She launched with every gun the yard could bolt on. Be careful up there.' : 'Expect a full flak screen.',
+    f.corvidAlive ? 'Corvid is aboard. She will come for you.' : `${cs()}: bring her down, then come home. In that order.`],
+  radio:{start:'Lantern to all flights. Here she comes. Everybody up.', done:{0:'Screen is broken. There’s the Ascendant, dead ahead.'}},
+  out:{
+    perfect:{mood:'pleased', say:'She’s in the sea. Every gun, every fan, every fighter. The Varn ambassador has asked for a ceasefire, very politely. I said I’d think about it.', next:'end:v2flawless'},
+    success:{mood:'pleased', say:'The Ascendant is down. The sky is ours again. Come home, Kestrel.', next:'end:v2victory'},
+    fail:{mood:'angry', say:'She got through. The Bastion is burning and the Ascendant is still up there. We are not done.', next:'end:v2lost'}
+  }};
 for (const id in N) N[id].id = id;
 
 G.ENDINGS = {
@@ -219,6 +284,12 @@ G.ENDINGS = {
     s.roster.ridge === 'active' ? 'Ridge finally writes his report. It is two lines long. Arkwright frames it.' : 'Ridge’s callsign is retired from the Bastion’s roster.', 'You are promoted to squadron leader. Arkwright pins the bars on herself, a little crooked, and doesn’t fix them.']},
   pyrrhic:{title:'Iron and Salt', grade:'Costly victory', mood:'stern', text:() => ['The Bastion survives, and the Varn offensive breaks against her hull. The war ends in an uneasy armistice.',
     'The fortress on Orrin Atoll still stands, empty. Nobody wants to go back.', 'Arkwright stays up all night writing letters to families. In the morning she asks you to fly the dawn patrol with her.']},
+  v2flawless:{title:'Clear Skies', grade:'Flawless victory', mood:'pleased', vol:2, text:() => ['The Ascendant goes down in a column of steam a hundred miles from the Bastion. The Varn sign a lasting peace within the week.',
+    'Her reactor is raised from the seabed and studied for years. Nobody ever builds another one.', 'Arkwright books the wardroom again. This time she isn’t late, and neither are you.']},
+  v2victory:{title:'Ascendant Falls', grade:'Victory', mood:'pleased', vol:2, text:() => ['The Ascendant breaks apart over the open sea. Without her, the Varn offensive collapses.',
+    'The Republic lights the harbour at Port Meridian for three nights.', 'Arkwright: “Two wars. You can stop now. That’s a request, not an order.”']},
+  v2lost:{title:'Under the Shadow', grade:'Defeat', mood:'angry', vol:2, text:() => ['The Ascendant reaches the Bastion and burns her flight deck. The fleet scatters south.',
+    'For a season, the Varn carrier owns the sky over the archipelago.', 'Arkwright: “She can be killed. You showed me that. We go again.”']},
   retreat:{title:'The Southern Islands', grade:'Defeat', mood:'angry', text:() => ['The Bastion limps south with what is left of the fleet. The northern archipelago falls under Varn control.',
     'The war isn’t over. It just isn’t going your way.', 'Arkwright: “We regroup, we rearm, and we go back. You’re flying lead.”']}
 };
@@ -252,6 +323,9 @@ G.storyCommit = (id, grade) => {
   return st.ending;
 };
 G.storyReset = () => { G.save.story = G.newStory(); G.persist(); };
+/* Volume 2 starts from a finished Volume 1 (keeping its roster and flags) or replays from its own first chapter. */
+G.storyVol2 = () => { const st = G.save.story || (G.save.story = G.newStory()); st.node = 'v2n1'; st.ending = null; st.vol = 2; st.log = st.log.filter(l => !G.STORY[l.node] || !G.STORY[l.node].vol);
+  for (const k of ['v2intel', 'skyEarly', 'yardBurned', 'fuelSafe', 'convoyLost', 'corvidDown', 'corvidAlive']) delete st.flags[k]; G.persist(); };
 G.storyStep = () => { const st = G.save.story; return st.log.length + 1; };
 
 /* ---------- In-mission scripting ---------- */
@@ -265,14 +339,15 @@ G.storyRadio = (game, key, i) => {
 G.spawnHollow = (game, o = {}) => {
   const P = game.player.pos, a = Math.random()*6.28, cx = o.at ? o.at.x : P.x, cz = o.at ? o.at.z : P.z;
   const x = cx + Math.sin(a)*1500, z = cz + Math.cos(a)*1500, alt = Math.max(P.y, 200) + 250;
-  const e = G.spawn(game, 'fighter', x, z, {alt, tag:o.task !== undefined ? 'obj' : 'ace', name:'Hollow'});
+  const e = G.spawn(game, 'fighter', x, z, {alt, tag:o.task !== undefined ? 'obj' : 'ace', name:o.name || 'Hollow'});
+  if (o.lastWords) e.lastWords = o.lastWords; if (o.name) e.bossBar = o.name.toUpperCase();
   e.ace = true; e.boss = true; e.hp *= o.hpMul || 6; e.maxHp = e.hp; e.dmgMul *= 1.3; e.cash = 0;
   if (o.task !== undefined) e.task = o.task;
   if (o.retreat) e.retreatAt = o.retreat;
   e.dir = new V3(P.x - x, 0, P.z - z).normalize();
   for (let k = 0; k < (o.escorts || 0); k++) {
     const b = Math.random()*6.28, s = G.spawn(game, 'fighter', x + Math.sin(b)*160, z + Math.cos(b)*160, {alt:alt - 40 + k*30, tag:'ace'});
-    s.name = 'Hollow’s wingman'; s.ace = true; s.hp *= 1.6; s.maxHp = s.hp; s.dir = e.dir.clone();
+    s.name = (o.name || 'Hollow') + '’s wingman'; s.ace = true; s.hp *= 1.6; s.maxHp = s.hp; s.dir = e.dir.clone();
   }
   game.hollow = e;
   return e;
@@ -290,6 +365,26 @@ G.spawnSovereign = (game, o = {}) => {
   G.audio.boom(e.pos, 2); game.player.shake += 1.5;
   for (let k = 0; k < 3; k++) { const a = Math.random()*6.283, x = best.x + Math.sin(a)*160, z = best.z + Math.cos(a)*160; if (W.height(x, z) > 1) G.spawn(game, 'tank', x, z, {}); }
   game.sovereign = e;
+  return e;
+};
+/* The Ascendant: a flying carrier that circles the waypoint at altitude with turrets, missile batteries and six engines.
+   o.flak: number of flak turrets (4-8); o.launchMul: <1 launches fighters faster; o.cap: most launched fighters alive at once. */
+G.spawnSkyCarrier = (game, o = {}) => {
+  const P = game.player.pos, C = o.at || {x:P.x, z:P.z}, R = 1300, ang = Math.atan2(P.x - C.x, P.z - C.z) + 0.8;
+  const e = G.spawn(game, 'skycarrier', C.x + Math.sin(ang)*R, C.z + Math.cos(ang)*R, {alt:650, tag:o.task !== undefined ? 'obj' : null});
+  e.mesh.rotation.order = 'YXZ'; e.armored = true; e.noLock = true; e.bossBar = 'THE ASCENDANT'; e.cash = 0; e.hp *= o.hpMul || 1; e.maxHp = e.hp;
+  if (o.task !== undefined) e.task = o.task;
+  e.sc = {cx:C.x, cz:C.z, R, ang, alt:650, alt0:650, launchCd:8, launchMul:o.launchMul || 1, cap:o.cap || 4, exposed:false};
+  e.parts = [];
+  const U = e.mesh.userData, add = (type, mnt) => {
+    const p = G.spawn(game, type, e.pos.x, e.pos.z, {alt:e.pos.y}); p.part = true; p.carrier = e; p.zone = null;
+    game.scene.remove(p.mesh); p.mesh.position.set(mnt[0], mnt[1], mnt[2]); p.mesh.rotation.set(0, 0, 0);
+    if (type === 'skyflak' && mnt[1] < 0) p.mesh.rotation.z = Math.sign(mnt[0])*Math.PI/2;   // side turrets hang off the hull
+    e.mesh.add(p.mesh); e.parts.push(p); return p; };
+  U.mounts.flak.slice(0, o.flak || 6).forEach(m => add('skyflak', m));
+  U.mounts.mis.forEach(m => add('skymis', m));
+  U.mounts.eng.forEach(m => add('skyengine', m));
+  game.skycarrier = e;
   return e;
 };
 G.hollowRetreat = (game, e, driven) => {

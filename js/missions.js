@@ -15,11 +15,13 @@ G.TASKS = {
   city:   {label:'Liberate the town', short:'Town', n:t => 4 + t, reward:1600, xp:190},
   air:    {label:'Intercept incoming fighters', short:'Intercept', n:t => 3 + t, reward:1200, xp:150},
   boss:   {label:'Shoot down Hollow', short:'Hollow', n:() => 1, reward:2600, xp:320},
-  sovereign:{label:'Destroy the Sovereign', short:'Sovereign', n:() => 1, reward:3400, xp:420}
+  sovereign:{label:'Destroy the Sovereign', short:'Sovereign', n:() => 1, reward:3400, xp:420},
+  rival:  {label:'Shoot down the rival ace', short:'Rival ace', n:() => 1, reward:2800, xp:340},
+  skycarrier:{label:'Bring down the flying carrier', short:'Ascendant', n:() => 1, reward:5200, xp:600}
 };
 G.taskText = T => {
   const n = T.n; if (T.text) return T.text;
-  return {sovereign:`Destroy the Sovereign at ${T.place}`, boss:`Shoot down Hollow over ${T.place}`, patrol:`Patrol ${T.place} for enemy aircraft`, armor:`Destroy the armor column at ${T.place} (${n} vehicles)`, rescue:`Rescue ${n} civilian group${n > 1 ? 's' : ''} at ${T.place}`,
+  return {skycarrier:`Bring down the Ascendant over ${T.place}`, rival:`Shoot down ${T.who || 'the rival ace'} over ${T.place}`, sovereign:`Destroy the Sovereign at ${T.place}`, boss:`Shoot down Hollow over ${T.place}`, patrol:`Patrol ${T.place} for enemy aircraft`, armor:`Destroy the armor column at ${T.place} (${n} vehicles)`, rescue:`Rescue ${n} civilian group${n > 1 ? 's' : ''} at ${T.place}`,
     base:`Destroy the forward base at ${T.place} (${n} structures)`, sam:`Knock out ${n} SAM launchers at ${T.place}`, walkers:`Destroy ${n} walkers at ${T.place}`,
     recon:`Photograph ${n} sites at ${T.place}, below 150 m`, city:`Liberate ${T.place}: clear ${n} hostiles`, air:`Intercept ${n} fighters over ${T.place}`}[T.kind];
 };
@@ -105,7 +107,7 @@ G.spawnMission = function(game, L){
   for (const T of L.tasks) {
     const P = T.C, i = T.i;
     switch (T.kind) {
-      case 'patrol': case 'boss': case 'sovereign': break;
+      case 'patrol': case 'boss': case 'sovereign': case 'rival': case 'skycarrier': break;
       case 'air': for (let k = 0; k < Math.min(2, tier); k++) sp('aa', P.x, P.z, 120, 450); break;
       case 'armor': {
         const path = T.path.map(p => new V3(p.x, 0, p.z)), d = new V3().subVectors(path[1], path[0]).normalize();
@@ -195,7 +197,7 @@ G.Ops = class {
   }
   isDone(T){
     if (T.kind === 'patrol') return T.arrived && (T.hostiles ? (T.spawnedN >= T.n && this.alive(T) === 0) : T.t > 3);
-    if (T.kind === 'air' || T.kind === 'boss' || T.kind === 'sovereign') return T.spawnedN >= T.n && this.alive(T) === 0;
+    if (T.kind === 'air' || T.kind === 'boss' || T.kind === 'sovereign' || T.kind === 'rival' || T.kind === 'skycarrier') return T.spawnedN >= T.n && this.alive(T) === 0;
     const [d, n] = this.progress(T); return d >= n;
   }
   fighters(T, k){
@@ -211,7 +213,7 @@ G.Ops = class {
     const g = this.g, P = g.player, T = this.tasks[this.cur];
     if (T && !this.rtb) {
       const d = Math.hypot(P.pos.x - T.C.x, P.pos.z - T.C.z);
-      if (!T.arrived && d < (T.kind === 'patrol' || T.kind === 'air' ? 1000 : 1300)) {
+      if (!T.arrived && d < (T.kind === 'skycarrier' ? 3800 : T.kind === 'patrol' || T.kind === 'air' ? 1000 : 1300)) {
         T.arrived = true;
         if (T.kind === 'patrol') {
           if (T.hostiles) { this.fighters(T, T.n); G.hud.radio('Bastion', `Contacts at waypoint ${T.i + 1}. ${T.n} bandits, engage.`); }
@@ -219,6 +221,14 @@ G.Ops = class {
         } else if (T.kind === 'boss') {
           G.spawnHollow(g, {task:T.i, hpMul:7, escorts:T.escorts || 2, at:T.C}); T.spawnedN = 1; G.hud.flash('RED TAILS · HOLLOW INBOUND');
           G.hud.radio('Hollow', `There you are, ${G.save.callsign || 'Kestrel'}. Just you and me now.`);
+        } else if (T.kind === 'rival') {
+          G.spawnHollow(g, {task:T.i, at:T.C, escorts:T.escorts || 2, name:T.who, hpMul:T.hpMul || 6, lastWords:T.lastWords}); T.spawnedN = 1;
+          G.hud.flash(`RED TAILS · ${String(T.who).toUpperCase()} INBOUND`); if (T.hello) G.hud.radio(T.who, T.hello.replace(/\{cs\}/g, G.save.callsign || 'Kestrel'));
+        } else if (T.kind === 'skycarrier') {
+          G.spawnSkyCarrier(g, {task:T.i, at:T.C, flak:T.flak, launchMul:T.launchMul, cap:T.cap, hpMul:T.hpMul}); T.spawnedN = 1;
+          G.hud.flash('THE ASCENDANT · DEAD AHEAD');
+          G.hud.radio(G.OFFICER.short, 'There she is. Kill the flak, then the six engines. Her reactor is sealed until the engines are gone. And watch the bow: that hangar never stops launching.');
+          if (T.corvid) g.later(20, () => { const h = G.spawnHollow(g, {at:T.C, escorts:1, name:'Corvid', hpMul:5, lastWords:'Tell Hollow... I tried...'}); G.hud.radio('Corvid', 'Did you think I would let you touch her? Come here, Kestrel.'); });
         } else if (T.kind === 'sovereign') {
           G.spawnSovereign(g, {task:T.i, at:T.C}); T.spawnedN = 1; G.hud.flash('THE PLATEAU IS MOVING');
           G.hud.radio(G.OFFICER.short, 'Kestrel, the ground under the plateau just split open. Something is climbing out of it. Something big.');
