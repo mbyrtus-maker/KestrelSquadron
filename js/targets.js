@@ -494,11 +494,11 @@ G.buildEnemy = function(type, o = {}){
     F.setMissiles(0); g.add(F.root); F.root.scale.setScalar(3); u.F = F;
     const hullM = new THREE.MeshStandardMaterial({color:0x6c7179, roughness:0.58, metalness:0.3}), slateM = new THREE.MeshStandardMaterial({color:0x4e5170, roughness:0.55, metalness:0.35});
     const redM = new THREE.MeshStandardMaterial({color:0xb2322a, roughness:0.55, metalness:0.2}), darkM = new THREE.MeshStandardMaterial({color:0x2a2d33, roughness:0.6, metalness:0.5});
-    const exh = new THREE.MeshBasicMaterial({color:0xff7a3a}), glass = new THREE.MeshStandardMaterial({color:0x2a0b08, emissive:0xff3a1a, emissiveIntensity:0.5, roughness:0.1, metalness:0.4});
+    const exh = new THREE.MeshBasicMaterial({color:0xff7a3a}), glass = new THREE.MeshStandardMaterial({color:0x0e1216, emissive:0x3a0806, emissiveIntensity:0.6, roughness:0.08, metalness:0.7});   // near-black windows with a faint red glow
     F.root.traverse(o => { if (!o.isMesh || !o.material) return; const mt = o.material;
       if (mt.emissive && mt.emissive.getHex() === 0x2ab4e6) { o.material = mt.clone(); o.material.color.setHex(0xff8a7a); o.material.emissive.setHex(0xff2a1a); }   // red optics
       else if (mt.isMeshBasicMaterial && mt.color.getHex() === 0xcff4ff) o.material = exh;
-      else if (mt.isMeshPhysicalMaterial) { o.material = mt.clone(); o.material.color.setHex(0x3a1410); } });   // smoked red canopy
+      else if (mt.isMeshPhysicalMaterial) o.visible = false; });   // no bubble canopy: a flying-wing windscreen goes on the nose instead
     F.glow.color.setHex(0xff8a3a);
     const B2 = new THREE.MeshStandardMaterial({color:0x6c7179, roughness:0.62, metalness:0.35}), B2d = new THREE.MeshStandardMaterial({color:0x50545b, roughness:0.7, metalness:0.3});
     // hover and mech wings: each is one half of the jet's flying wing (same planform, colour and buried engines), so the forms match
@@ -512,6 +512,9 @@ G.buildEnemy = function(type, o = {}){
       }
       W.add(M(rbox(0.06, 0.03, 4.6, 0.01), redM, s*2.75, 0.11, 0.2)).rotation.y = s*0.98;                    // the same thin red edge line as the jet
     }
+    // windscreen: a low faired hump on the nose with four narrow slit panes, the same as the jet form's
+    { const wh = M(new THREE.SphereGeometry(1, 20, 10, 0, Math.PI*2, 0, Math.PI/2), B2, 0, 0.32, 1.9); wh.scale.set(0.72, 0.32, 1.5); P.nose.add(wh);
+      for (const x of [-0.42, -0.16, 0.16, 0.42]) { const w = M(rbox(0.24, 0.05, 0.34, 0.02), glass, x, 0.5 - Math.abs(x)*0.3, 3.12 - Math.abs(x)*0.45); w.rotation.x = -0.55; w.rotation.y = -x*0.6; P.nose.add(w); } }
     // nose: a blended chine on each side of the canopy, a glazed bombardier chin and red sensor lights
     for (const s of [1, -1]) { const ch = M(plate([[0, 0.6], [s*0.9, -0.6], [s*0.9, -1.6], [0, -1.6]], 0.12, 0.03), hullM, s*0.75, -0.15, 2.6); P.nose.add(ch); P.nose.add(M(rbox(0.16, 0.16, 0.16, 0.04), redM, s*0.95, -0.1, 2.0)); }
     { const ch = M(new THREE.SphereGeometry(1, 16, 10), glass, 0, -0.42, 2.9); ch.scale.set(0.32, 0.22, 0.7); P.nose.add(ch); }
@@ -537,10 +540,10 @@ G.buildEnemy = function(type, o = {}){
     const full = outline.concat(outline.slice(1, -1).reverse().map(([x, z]) => [-x, z]));
     SH.add(M(plate(full, 0.32, 0.12), B2));
     SH.add(M(plate(outline.slice(0, 3).concat([[0, -0.4]]).map(([x, z]) => [x*0.98, z]).concat([[-6.9, -1.0], [-7.05, -0.4]]), 0.05, 0.01), B2d, 0, -0.24, 0));   // darker belly panel
-    { const h = M(new THREE.SphereGeometry(1, 28, 14), B2, 0, 0.05, 0.6); h.scale.set(1.55, 0.52, 3.5); SH.add(h); }          // central hump (hides the folded fighter)
+    { const h = M(new THREE.SphereGeometry(1, 28, 14), B2, 0, 0.0, 0.9); h.scale.set(1.3, 0.46, 3.0); SH.add(h); }          // central hump (hides the folded fighter)
     { const h = M(new THREE.SphereGeometry(1, 20, 10), B2d, 0, -0.05, 0.4); h.scale.set(1.45, 0.4, 3.1); SH.add(h); }
     for (const s of [1, -1]) {
-      const w = M(rbox(0.55, 0.06, 0.28, 0.02), glass, s*0.34, 0.47, 2.6); w.rotation.x = -0.35; w.rotation.y = s*0.25; SH.add(w);   // slit windscreen panes
+      for (const x of [0.16, 0.42]) { const w = M(rbox(0.3, 0.05, 0.42, 0.02), glass, s*x, 0.34 - x*0.25, 3.45 - x*0.5); w.rotation.x = -0.4; w.rotation.y = -s*x*0.6; SH.add(w); }   // four slit windscreen panes
       for (const x of [1.7, 2.6]) {                                                                                 // buried engines: dorsal intake humps
         const hm = M(new THREE.SphereGeometry(1, 16, 8), B2, s*x, 0.18, 0.2 - x*0.25); hm.scale.set(0.5, 0.22, 1.6); SH.add(hm);
         const ik = M(rbox(0.62, 0.16, 0.12, 0.04), m.rub, s*x, 0.33, 1.4 - x*0.25); ik.rotation.x = -0.25; SH.add(ik);

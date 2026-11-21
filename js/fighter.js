@@ -62,7 +62,9 @@ const STYLE = {
   osprey:   {wing:'cranked', span:5.9, nose:1.1,  bodyW:1.15, num:'X4',  canards:true, big:true},
   // the Varn Harbinger (volume 3 boss): a bomber planform on the same three-mode chassis, built at three times the size in targets.js
   harbinger:{wing:'bomber',  span:6.05, nose:1.3,  bodyW:1.3,  num:'V01', big:true, armor:true, varn:true,
-    pose:{mech:{wingL:{p:[1.1,5.1,-1.5], r:[10,-25,-28]}, wingR:{p:[-1.1,5.1,-1.5], r:[10,25,28]}},   // the broad wing hangs off the back like a cape instead of standing up
+    // hover and mech: each wing half folds flat onto the back (span aft in hover, span down in mech), the two halves stacked
+    pose:{hover:{wingL:{p:[0.3,1.02,1.5], b:[[0,0,-1],[0,1,0],[1,0,0]], s:0.55}, wingR:{p:[-0.3,1.1,1.5], b:[[0,0,1],[0,1,0],[-1,0,0]], s:0.55}},
+      mech:{wingL:{p:[0.3,5.4,-1.3], b:[[0,-1,0],[0,0,-1],[1,0,0]], s:0.55}, wingR:{p:[-0.3,5.4,-1.38], b:[[0,1,0],[0,0,-1],[-1,0,0]], s:0.55}},
       // jet: every fighter part folds away inside the flying-wing shell (built in targets.js), and unfolds out of it on transformation
       jet:{body:{p:[0,0,0], s:0.5}, nose:{p:[0,0,1.2], s:0.01}, wingL:{p:[1.15,0.12,-0.7], s:0.01}, wingR:{p:[-1.15,0.12,-0.7], s:0.01},
         legL:{p:[0.85,-0.25,0.4], s:0.01}, legR:{p:[-0.85,-0.25,0.4], s:0.01}, gunpod:{p:[0,-0.6,-1.0], s:0.01}}}}
@@ -427,7 +429,9 @@ G.buildFighter = function(frame){
     ctl:{aimPitch:0, aimYaw:0, walk:0, walkAmt:0, block:0, swing:-1, thrust:0.3, lp:0, lr:0, lt:0}, names:Object.keys(P)};
   const TG = st.pose ? {} : TGT;   // per-frame pose overrides on top of the shared poses
   if (st.pose) for (const m in TGT) { TG[m] = Object.assign({}, TGT[m]); for (const n in st.pose[m] || {}) { const d = st.pose[m][n], rr = d.r || [0,0,0];
-    TG[m][n] = {p:new V3(...d.p), q:new THREE.Quaternion().setFromEuler(E.set(rr[0]*D, rr[1]*D, rr[2]*D, 'YXZ')), s:d.s ?? 1}; } }
+    const q = d.b ? new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new V3(...d.b[0]), new V3(...d.b[1]), new V3(...d.b[2])))   // b: where the part's own x, y and z axes point
+      : new THREE.Quaternion().setFromEuler(E.set(rr[0]*D, rr[1]*D, rr[2]*D, 'YXZ'));
+    TG[m][n] = {p:new V3(...d.p), q, s:d.s ?? 1}; } }
   for (const n of F.names) { const t = TG.jet[n]; P[n].position.copy(t.p); P[n].quaternion.copy(t.q); P[n].scale.setScalar(t.s); }
 
   const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qx = new THREE.Quaternion(), v = new V3(), v2 = new V3(), X = new V3(1, 0, 0), Y = new V3(0, 1, 0), Z = new V3(0, 0, 1), ql = new THREE.Quaternion(), qt = new THREE.Quaternion(), ANK = new V3(0, 0, -5.7), UPPER = ['body', 'nose', 'wingL', 'wingR', 'armL', 'armR', 'head'], qu = new THREE.Quaternion(), qf = new THREE.Quaternion(), qg = new THREE.Quaternion(), vs = new V3();
