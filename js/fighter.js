@@ -62,8 +62,8 @@ const STYLE = {
   osprey:   {wing:'cranked', span:5.9, nose:1.1,  bodyW:1.15, num:'X4',  canards:true, big:true},
   // the Varn Harbinger (volume 3 boss): a bomber planform on the same three-mode chassis, built at three times the size in targets.js
   harbinger:{wing:'bomber',  span:6.05, nose:1.3,  bodyW:1.3,  num:'V01', big:true, armor:true, varn:true,
-    // hover and mech: each wing half folds flat onto the back (span aft in hover, span down in mech), the two halves stacked
-    pose:{hover:{nose:{p:[0,0.05,1.6], s:0.01}, wingL:{p:[0.3,0.62,1.3], b:[[0,0,-1],[0,1,0],[1,0,0]], s:0.55}, wingR:{p:[-0.3,0.7,1.3], b:[[0,0,1],[0,1,0],[-1,0,0]], s:0.55}},
+    // mech: each wing half folds flat onto the back, span down, the two halves stacked
+    pose:{hover:{nose:{p:[0,0.05,1.6], s:0.01}},   // hover keeps its wings spread (the shared pose); only the fighter nose folds away
       mech:{wingL:{p:[0.3,5.4,-1.3], b:[[0,-1,0],[0,0,-1],[1,0,0]], s:0.55}, wingR:{p:[-0.3,5.4,-1.38], b:[[0,1,0],[0,0,-1],[-1,0,0]], s:0.55}},
       // jet: every fighter part folds away inside the flying-wing shell (built in targets.js), and unfolds out of it on transformation
       jet:{body:{p:[0,0,0], s:0.5}, nose:{p:[0,0,1.2], s:0.01}, wingL:{p:[1.15,0.12,-0.7], s:0.01}, wingR:{p:[-1.15,0.12,-0.7], s:0.01},
