@@ -468,7 +468,7 @@ G.spawnHarbinger = (game, o = {}) => {
   const P = game.player.pos, C = o.at || {x:P.x, z:P.z}, a = Math.atan2(P.x - C.x, P.z - C.z) + Math.PI + (Math.random() - 0.5);
   const x = C.x + Math.sin(a)*2600, z = C.z + Math.cos(a)*2600, alt = Math.max(game.world.height(x, z), 0) + 300;
   const e = G.spawn(game, 'harbinger', x, z, {alt, tag:o.task !== undefined ? 'obj' : null, yaw:Math.atan2(C.x - x, C.z - z)});
-  e.bossBar = 'THE HARBINGER'; e.cash = 0; e.hc = {x:C.x, z:C.z}; e.hp *= o.hpMul || 1; e.maxHp = e.hp; e.dmgMul *= o.dmg || 1;
+  e.bossBar = 'THE HARBINGER'; e.cash = 0; e.hc = {x:C.x, z:C.z}; e.hp *= o.hpMul || 1; e.maxHp = e.hp; e.hpFloor = e.maxHp*0.667; e.dmgMul *= o.dmg || 1;
   if (o.task !== undefined) e.task = o.task;
   for (let k = 0; k < (o.escorts || 0); k++) { const s = G.spawn(game, 'fighter', x + (k % 2 ? 1 : -1)*120, z - 120 - k*40, {alt:alt + 20}); s.dir = new V3(C.x - x, 0, C.z - z).normalize(); s.zone = null; }
   game.harbinger = e;

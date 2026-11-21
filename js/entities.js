@@ -393,7 +393,7 @@ G.updateSovereign = function(game, e, dt){
    JET: big bombing runs at about 280 m over the target, strings of bombs, a dorsal gun that covers its tail, and missile pairs.
    HOVER: hangs 110 m up and circles the target at 420 m, raking it with its gun pod and firing six-missile salvos.
    MECH: lands on solid ground and walks at the target, firing heavy shells and missiles, and stomps anything grounded inside 110 m.
-   Each transformation takes 1.6 s, during which it is armoured and holds still. */
+   Each transformation takes 1.6 s, during which it is armoured and doesn't fire. */
 const HB = new V3(), HB2 = new V3(), HB3 = new V3();
 G.HARB_MODES = ['jet', 'hover', 'mech'];
 G.harbSetMode = (e, mode) => {   // shared by the host and co-op guests
@@ -408,28 +408,32 @@ G.updateHarbinger = function(game, e, dt){
   const tgt = G.pickTarget(game, e, 3500, false), fire = !e.noFire && !game.over;
   // phase change when health reaches the floor
   const frac = e.hp/e.maxHp;
-  if (S.tf <= 0 && ((e.fm === 'jet' && frac <= 0.667) || (e.fm === 'hover' && frac <= 0.334 && S.landed))) {
+  if (S.tf <= 0 && ((e.fm === 'jet' && e.hp <= e.maxHp*0.667 + 0.5) || (e.fm === 'hover' && e.hp <= e.maxHp*0.334 + 0.5 && S.landed))) {
     const next = e.fm === 'jet' ? 'hover' : 'mech'; S.tf = 1.6; e.armored = true; G.harbSetMode(e, next); S.st = next;
     G.hud.flash(`THE HARBINGER IS TRANSFORMING · ${next.toUpperCase()} MODE`); G.audio.transform(next); G.audio.tone(70, 1.0, 'sawtooth', 0.06, 50); P.shake += 0.5;
     G.hud.radio(G.OFFICER.short, next === 'hover' ? 'It’s changing shape! Kestrel, it’s stopping in mid-air. Watch that gun pod.' : 'It’s landing. It’s standing up. Kestrel, that thing is the size of a building. Keep moving and stay off the ground near its feet.');
     if (next === 'mech') { for (let i = 0; i < 10; i++) { const a = i/10*6.283; game.fx.dust(HB.set(e.pos.x + Math.sin(a)*30, gh(e.pos.x, e.pos.z), e.pos.z + Math.cos(a)*30)); } G.audio.boom(e.pos, 1.6); P.shake += 1.2; }
   }
-  if (e.fm === 'hover' && frac <= 0.334 && !S.landed && S.st !== 'descend') { S.st = 'descend'; G.hud.flash('THE HARBINGER IS LOOKING FOR GROUND'); }
+  if (e.fm === 'hover' && e.hp <= e.maxHp*0.334 + 0.5 && !S.landed && S.st !== 'descend') { S.st = 'descend'; G.hud.flash('THE HARBINGER IS LOOKING FOR GROUND · ARMOUR HOLDING'); }
   if (S.tf > 0) { S.tf -= dt; if (S.tf <= 0) e.armored = false; }
   e.hpFloor = e.fm === 'jet' ? e.maxHp*0.667 : e.fm === 'hover' ? e.maxHp*0.334 : 0;
   const ctl = F.ctl; ctl.walkAmt = 0; ctl.thrust = 0.5;
   if (e.fm === 'jet') {
     // fly: bombing runs over the target (or the waypoint), then extend and come round again
-    if (!S.pt || S.st === 'run' && Math.hypot(S.pt.x - e.pos.x, S.pt.z - e.pos.z) < 140) {
-      if (S.pt) { S.st = 'extend'; S.stT = 7; }
+    const rx = S.pt ? S.pt.x - e.pos.x : 0, rz = S.pt ? S.pt.z - e.pos.z : 0, rd = Math.hypot(rx, rz);
+    if (S.st === 'run') S.runT = (S.runT || 0) + dt;
+    if (!S.pt || S.st === 'run' && (rd < 140 || (rd < 400 && rx*S.dir.x + rz*S.dir.z < 0) || S.runT > 25)) {   // the point is overhead, passed abeam, or the run has gone on too long
+      if (S.pt) { S.st = 'extend'; S.stT = 7; } S.runT = 0;
       const T = tgt && Math.hypot(tgt.pos.x - C.x, tgt.pos.z - C.z) < 2500 ? tgt.pos : C; S.pt = {x:T.x, z:T.z};
     }
     if (S.st === 'extend' && (S.stT -= dt) <= 0) { S.st = 'run'; const T = tgt ? tgt.pos : C; S.pt = {x:T.x, z:T.z}; }
     const alt = gh(e.pos.x, e.pos.z) + 280, des = HB;
     if (S.st === 'run') des.set(S.pt.x - e.pos.x, 0, S.pt.z - e.pos.z).normalize(); else des.copy(S.dir).setY(0).normalize();
     des.y = Math.max(-0.3, Math.min(0.3, (alt - e.pos.y)/300));
-    const y0 = Math.atan2(S.dir.x, S.dir.z); S.dir.lerp(des.normalize(), Math.min(1, dt*0.55)).normalize();
-    let dy = Math.atan2(S.dir.x, S.dir.z) - y0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    // turn at a fixed rate (half a radian a second), always the same way when the target is dead astern
+    const y0 = Math.atan2(S.dir.x, S.dir.z); let err = Math.atan2(des.x, des.z) - y0; err = Math.atan2(Math.sin(err), Math.cos(err)); if (Math.abs(err) > 3.0) err = Math.abs(err);
+    const dy = Math.max(-0.5*dt, Math.min(0.5*dt, err)), ny = y0 + dy, hz = Math.sqrt(Math.max(0, 1 - des.y*des.y));
+    S.dir.y += (des.y - S.dir.y)*Math.min(1, dt*0.8); const h2 = Math.sqrt(Math.max(0, 1 - S.dir.y*S.dir.y)); S.dir.x = Math.sin(ny)*h2; S.dir.z = Math.cos(ny)*h2;
     S.roll += (Math.max(-0.7, Math.min(0.7, -dy/dt*1.6 || 0)) - S.roll)*Math.min(1, dt*2);
     e.pos.addScaledVector(S.dir, S.spd*dt); e.yaw = Math.atan2(S.dir.x, S.dir.z);
     m.rotation.set(-Math.asin(S.dir.y), e.yaw, S.roll); ctl.thrust = 0.9;
@@ -479,7 +483,9 @@ G.updateHarbinger = function(game, e, dt){
       // mech: walk toward the target over solid ground
       const d = tgt ? Math.hypot(tgt.pos.x - e.pos.x, tgt.pos.z - e.pos.z) : 0;
       if (tgt && S.stomp <= 0 && d > 200) { const vx = Math.sin(e.yaw), vz = Math.cos(e.yaw), nx = e.pos.x + vx*13*dt, nz = e.pos.z + vz*13*dt;
-        if (W.height(nx, nz) > 0.5) { e.pos.x = nx; e.pos.z = nz; S.walk += dt*2.2; ctl.walkAmt = 1; } }
+        let ok = W.height(nx, nz) > 0.5, ax = vx, az = vz;
+        for (const da of [0.8, -0.8, 1.6, -1.6]) { if (ok) break; ax = Math.sin(e.yaw + da); az = Math.cos(e.yaw + da); ok = W.height(e.pos.x + ax*13*dt*8, e.pos.z + az*13*dt*8) > 0.5; }   // water ahead: try a slant to either side
+        if (ok) { e.pos.x += ax*13*dt; e.pos.z += az*13*dt; S.walk += dt*2.2; ctl.walkAmt = 1; } }
       ctl.walk = S.walk; e.pos.y = gh(e.pos.x, e.pos.z) + 3*G.CLEAR.mech; m.rotation.set(0, e.yaw, 0); ctl.thrust = 0.12;
       const grounded = P.alive && P.mode !== 'jet' && P.pos.y - gh(P.pos.x, P.pos.z) < 30, pd = Math.hypot(P.pos.x - e.pos.x, P.pos.z - e.pos.z);
       if (S.stomp > 0) { S.stomp -= dt;
@@ -500,11 +506,14 @@ G.updateHarbinger = function(game, e, dt){
   // its bulk is solid: push the player out of the hit sphere
   if (P.alive) { HB.copy(P.pos).sub(HB2.copy(e.pos).setY(e.pos.y + e.cy)); const d = HB.length(), R = e.r + 4;
     if (d < R && d > 0.01) { P.pos.addScaledVector(HB, (R - d)/d); if (game.time - (S.bumpT || -99) > 1) { S.bumpT = game.time; P.damage(30, e.pos.clone(), 'impact'); P.shake += 0.4; } } }
+  { const Wg = game.wing; if (Wg.alive) { HB.copy(Wg.pos).sub(HB2.copy(e.pos).setY(e.pos.y + e.cy)); const d = HB.length(), R = e.r + 4;
+    if (d < R && d > 0.01 && game.time - (S.wbumpT || -99) > 1) { S.wbumpT = game.time; Wg.hit(30); } } }
 };
 G.harbLandSpot = (W, from, C) => {
   let best = null, bd = 1e9;
-  for (let i = 0; i < 160; i++) { const a = Math.random()*6.283, r = 100 + Math.random()*1800, x = C.x + Math.sin(a)*r, z = C.z + Math.cos(a)*r;
-    if (W.height(x, z) > 6 && W.slope(x, z) < 0.3) { const d = Math.hypot(x - from.x, z - from.z); if (d < bd) { bd = d; best = {x, z}; } } }
+  for (const R of [1800, 4000, 9000]) { if (best) break;   // widen the search until solid ground turns up
+    for (let i = 0; i < 200; i++) { const a = Math.random()*6.283, r = 100 + Math.random()*R, x = C.x + Math.sin(a)*r, z = C.z + Math.cos(a)*r;
+      if (W.height(x, z) > 6 && W.slope(x, z) < 0.3) { const d = Math.hypot(x - from.x, z - from.z); if (d < bd) { bd = d; best = {x, z}; } } } }
   return best || {x:from.x, z:from.z};
 };
 function shootFrom(game, e, from, tgt, speed, dmg, o){ shoot(game, e, from, tgt, speed, dmg, o); }
@@ -514,7 +523,7 @@ G.updateEnemy = function(game, e, dt){
   e.t += dt; e.cd -= dt; if (e.hitT > 0) e.hitT -= dt;
   const jam = P.jam;
   const px0 = e.pos.x, py0 = e.pos.y, pz0 = e.pos.z;
-  if (e.type === 'colossus') { e.kb = null; e.stun = 0; }   // far too heavy to knock back or stagger
+  if (e.type === 'colossus' || e.type === 'harbinger') { e.kb = null; e.stun = 0; }   // far too heavy to knock back or stagger
   // Sword knockback and stagger (ground units and walkers).
   if (e.kb) {
     e.pos.x += e.kb.x*dt; e.pos.z += e.kb.z*dt; e.kb.multiplyScalar(Math.exp(-dt*5));

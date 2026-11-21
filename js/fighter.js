@@ -66,7 +66,8 @@ const STYLE = {
     pose:{hover:{nose:{p:[0,0.05,1.6], s:0.01}},   // hover keeps its wings spread (the shared pose); only the fighter nose folds away
       mech:{wingL:{p:[0.3,5.4,-1.3], b:[[0,-1,0],[0,0,-1],[1,0,0]], s:0.55}, wingR:{p:[-0.3,5.4,-1.38], b:[[0,1,0],[0,0,-1],[-1,0,0]], s:0.55}},
       // jet: every fighter part folds away inside the flying-wing shell (built in targets.js), and unfolds out of it on transformation
-      jet:{body:{p:[0,0,0], s:0.5}, nose:{p:[0,0,1.2], s:0.01}, wingL:{p:[1.15,0.12,-0.7], s:0.01}, wingR:{p:[-1.15,0.12,-0.7], s:0.01},
+      jet:{body:{p:[0,0,0], s:0.5}, nose:{p:[0,0,1.2], s:0.01}, wingL:{p:[1.15,0.12,-0.7]}, wingR:{p:[-1.15,0.12,-0.7]},   // the wing halves sit exactly where the shell's halves are, so they visibly swing out of it
+       
         legL:{p:[0.85,-0.25,0.4], s:0.01}, legR:{p:[-0.85,-0.25,0.4], s:0.01}, gunpod:{p:[0,-0.6,-1.0], s:0.01}}}}
 };
 const PLAN = {
@@ -256,9 +257,10 @@ G.buildFighter = function(frame){
     }
     boot.add(M(rbox(1.3, 0.65, 0.7, 0.14), dark, 0, 0.75, -5.7));                           // heel block
     boot.add(M(rbox(0.8, 0.2, 0.3, 0.06), hull, 0, 1.0, -5.62));                              // heel plate
-    const fm = M(fin([[0.6,0],[-1.05,0],[-1.55,2.15],[-0.6,2.15]], 0.14, 0.04), hullF, s*0.32, 0.62, -3.9); fm.rotation.z = -s*0.3; L.add(fm);
-    fm.add(M(rbox(0.16, 0.36, 1.0, 0.06), trim, 0, 2.05, -1.05));
-    const num = M(new THREE.PlaneGeometry(0.9, 0.45), numM, s*0.085, 1.05, -0.55); num.rotation.y = s*Math.PI/2; num.castShadow = false; fm.add(num);
+    if (!st.varn) {   // calf fins with the tail number (the tailless Varn bomber has none)
+      const fm = M(fin([[0.6,0],[-1.05,0],[-1.55,2.15],[-0.6,2.15]], 0.14, 0.04), hullF, s*0.32, 0.62, -3.9); fm.rotation.z = -s*0.3; L.add(fm);
+      fm.add(M(rbox(0.16, 0.36, 1.0, 0.06), trim, 0, 2.05, -1.05));
+      const num = M(new THREE.PlaneGeometry(0.9, 0.45), numM, s*0.085, 1.05, -0.55); num.rotation.y = s*Math.PI/2; num.castShadow = false; fm.add(num); }
   };
   leg('legL', 1); leg('legR', -1);
 
@@ -397,7 +399,7 @@ G.buildFighter = function(frame){
   // Tower shield, about twice the old one: layered plate with a raised spine, rim, boss and a sighting notch.
   sh.add(M(fin([[2.3,1.9],[1.2,3.3],[-1.2,3.3],[-2.3,1.9],[-2.3,-1.9],[-1.2,-3.3],[1.2,-3.3],[2.3,-1.9]], 0.3, 0.1), hullF));
   sh.add(M(fin([[1.9,1.7],[1.0,2.85],[-1.0,2.85],[-1.9,1.7],[-1.9,-1.7],[-1.0,-2.85],[1.0,-2.85],[1.9,-1.7]], 0.18, 0.06), hull, 0.2, 0, 0));
-  sh.add(M(rbox(0.2, 5.4, 0.6, 0.08), trim, 0.32, 0, 0)); sh.add(M(rbox(0.2, 0.5, 3.7, 0.08), trim, 0.3, 1.5, 0));
+  sh.add(M(rbox(0.2, 5.4, 0.6, 0.08), trim, 0.32, 0, 0)); if (!st.varn) sh.add(M(rbox(0.2, 0.5, 3.7, 0.08), trim, 0.3, 1.5, 0));   // the Varn shield has a plain spine, no cross bar
   const boss = M(new THREE.SphereGeometry(0.62, 20, 12), metal, 0.3, 0, 0); boss.scale.set(0.5, 1, 1); sh.add(boss);
   sh.add(M(rbox(0.36, 0.5, 1.2, 0.1), black, 0.02, 3.05, 0));
   for (const [y, z] of [[2.2, 1.5], [2.2, -1.5], [-2.2, 1.5], [-2.2, -1.5]]) sh.add(M(cyl(0.12, 0.12, 0.1, 8).rotateY(Math.PI/2), metal, 0.32, y, z));

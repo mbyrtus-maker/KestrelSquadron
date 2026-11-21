@@ -488,19 +488,19 @@ G.buildEnemy = function(type, o = {}){
       eng:[[-60, 0.5, 48], [60, 0.5, 48], [-76, 0.5, -10], [76, 0.5, -10], [-62, 0.5, -68], [62, 0.5, -68]]};
   } else if (type === 'harbinger') {
     // The Harbinger (volume 3 boss): a Varn heavy bomber built on a captured three-mode chassis, three times a Kestrel's size.
-    // It uses the Kestrel's transformation rig (jet, hover, mech) with a broad bomber wing, four underslung engines,
-    // a belly bomb bay, a dorsal gun turret, twin canted tails, a glazed bombardier chin and Varn red optics and exhaust.
+    // It uses the Kestrel's transformation rig. Jet: a tailless flying wing (shell below) with buried engines and a slit windscreen.
+    // Hover: the wing's two halves spread out and its nose section replaces the fighter nose. Mech: the halves fold flat on the back.
     const F = G.buildFighter({id:'harbinger', color:0x6c7179, trim:0x4e5170, lasers:4}), P = F.P;
     F.setMissiles(0); g.add(F.root); F.root.scale.setScalar(3); u.F = F;
     const hullM = new THREE.MeshStandardMaterial({color:0x6c7179, roughness:0.58, metalness:0.3}), slateM = new THREE.MeshStandardMaterial({color:0x4e5170, roughness:0.55, metalness:0.35});
     const redM = new THREE.MeshStandardMaterial({color:0xb2322a, roughness:0.55, metalness:0.2}), darkM = new THREE.MeshStandardMaterial({color:0x2a2d33, roughness:0.6, metalness:0.5});
-    const exh = new THREE.MeshBasicMaterial({color:0xff7a3a}), glass = new THREE.MeshStandardMaterial({color:0x0e1216, emissive:0x3a0806, emissiveIntensity:0.6, roughness:0.08, metalness:0.7});   // near-black windows with a faint red glow
+    const exh = new THREE.MeshBasicMaterial({color:0xff7a3a}), glass = new THREE.MeshStandardMaterial({color:0x0b0e12, emissive:0x3a0806, emissiveIntensity:0.15, roughness:0.08, metalness:0.7});   // near-black windows with a faint red glow
     F.root.traverse(o => { if (!o.isMesh || !o.material) return; const mt = o.material;
       if (mt.emissive && mt.emissive.getHex() === 0x2ab4e6) { o.material = mt.clone(); o.material.color.setHex(0xff8a7a); o.material.emissive.setHex(0xff2a1a); }   // red optics
       else if (mt.isMeshBasicMaterial && mt.color.getHex() === 0xcff4ff) o.material = exh;
       else if (mt.isMeshPhysicalMaterial) o.visible = false; });   // no bubble canopy: a flying-wing windscreen goes on the nose instead
     F.glow.color.setHex(0xff8a3a);
-    const B2 = new THREE.MeshStandardMaterial({color:0x6c7179, roughness:0.62, metalness:0.35}), B2d = new THREE.MeshStandardMaterial({color:0x50545b, roughness:0.7, metalness:0.3});
+    const B2 = new THREE.MeshStandardMaterial({color:0x5a5e65, roughness:0.62, metalness:0.35}), B2d = new THREE.MeshStandardMaterial({color:0x45484e, roughness:0.7, metalness:0.3});
     // hover and mech wings: each is one half of the jet's flying wing (same planform, colour and buried engines), so the forms match
     for (const [n, s] of [['wingL', 1], ['wingR', -1]]) {
       const W = P[n];
@@ -510,7 +510,7 @@ G.buildEnemy = function(type, o = {}){
         const ik = M(rbox(0.62, 0.16, 0.12, 0.04), m.rub, s*x, 0.21, 2.1 - x*0.25); ik.rotation.x = -0.25; W.add(ik);
         W.add(M(rbox(0.7, 0.08, 0.3, 0.02), exh, s*x, 0.02, -0.85 - (x > 1 ? 0.55 : 0)));
       }
-      W.add(M(rbox(0.06, 0.03, 4.6, 0.01), redM, s*2.75, 0.11, 0.2)).rotation.y = s*0.98;                    // the same thin red edge line as the jet
+      { const rl = M(rbox(0.06, 0.03, 4.6, 0.01), redM, s*2.75, 0.11, 0.2); rl.rotation.y = -s*0.98; W.add(rl); }                    // the same thin red edge line as the jet
     }
     // windscreen: a low faired hump on the nose with four narrow slit panes, the same as the jet form's
     { const wh = M(new THREE.SphereGeometry(1, 20, 10, 0, Math.PI*2, 0, Math.PI/2), B2, 0, 0.32, 1.9); wh.scale.set(0.72, 0.32, 1.5); P.nose.add(wh);
@@ -526,7 +526,7 @@ G.buildEnemy = function(type, o = {}){
     // mech details: rounded engine-pod pauldrons with a red band, a slim head crest, toe spikes and heel spurs, a long gun pod
     for (const [n, s] of [['armL', 1], ['armR', -1]]) { const A = P[n];
       A.add(M(cyl(0.78, 0.78, 1.7, 18), hullM, s*0.35, 0.15, 0.1)); A.add(M(cyl(0.8, 0.8, 0.2, 18), redM, s*0.35, 0.15, 0.3));
-      A.add(M(rbox(1.3, 0.5, 0.5, 0.12), slateM, s*0.35, 0.15, 1.0)); A.add(M(new THREE.CircleGeometry(0.5, 16).rotateY(Math.PI), exh, s*0.35, 0.15, -0.76)); }
+      A.add(M(rbox(1.3, 0.5, 0.5, 0.12), slateM, s*0.35, 0.15, 1.0)); A.add(M(new THREE.CircleGeometry(0.3, 16).rotateY(Math.PI), darkM, s*0.35, 0.15, -0.76)); }
     { const cr = M(fin([[0, 0], [-0.7, 0], [-0.4, 0.9], [0.1, 0.9]], 0.05, 0.01), redM, 0, 0.55, 0.1); cr.rotation.y = -Math.PI/2; P.head.add(cr); }
     for (const ft of F.feet) {
       const t = M(new THREE.ConeGeometry(0.35, 1.3, 4), slateM, 0, -2.25, -5.85); t.rotation.z = Math.PI; t.scale.z = 0.5; ft.add(t);   // toe spike (foot-local -y is forward)
@@ -538,29 +538,31 @@ G.buildEnemy = function(type, o = {}){
     const SH = new THREE.Group(); F.root.add(SH); u.shell = SH; u.shellK = 1;
     const outline = [[0, 4.3], [7.2, -0.4], [7.2, -1.0], [4.8, -1.6], [3.2, -2.9], [1.5, -1.6], [0, -2.7]];
     const full = outline.concat(outline.slice(1, -1).reverse().map(([x, z]) => [-x, z]));
-    SH.add(M(plate(full, 0.32, 0.12), B2));
-    SH.add(M(plate(outline.slice(0, 3).concat([[0, -0.4]]).map(([x, z]) => [x*0.98, z]).concat([[-6.9, -1.0], [-7.05, -0.4]]), 0.05, 0.01), B2d, 0, -0.24, 0));   // darker belly panel
+    SH.add(M(plate(full, 0.22, 0.1), B2));
+    SH.add(M(plate(outline.slice(0, 3).concat([[0, -0.4]]).map(([x, z]) => [x*0.98, z]).concat([[-6.9, -1.0], [-7.05, -0.4]]), 0.04, 0.01), B2d, 0, -0.13, 0));   // darker belly panel
     { const h = M(new THREE.SphereGeometry(1, 28, 14), B2, 0, 0.0, 0.9); h.scale.set(1.3, 0.46, 3.0); SH.add(h); }          // central hump (hides the folded fighter)
     { const h = M(new THREE.SphereGeometry(1, 20, 10), B2d, 0, -0.05, 0.4); h.scale.set(1.45, 0.4, 3.1); SH.add(h); }
     for (const s of [1, -1]) {
-      for (const x of [0.16, 0.42]) { const w = M(rbox(0.3, 0.05, 0.42, 0.02), glass, s*x, 0.34 - x*0.25, 3.45 - x*0.5); w.rotation.x = -0.4; w.rotation.y = -s*x*0.6; SH.add(w); }   // four slit windscreen panes
+      for (const x of [0.16, 0.42]) { const w = M(rbox(0.3, 0.03, 0.42, 0.01), glass, s*x, 0.3 - x*0.25, 3.45 - x*0.5); w.rotation.x = -0.32; w.rotation.y = -s*x*0.6; SH.add(w); }   // four slit windscreen panes
       for (const x of [1.7, 2.6]) {                                                                                 // buried engines: dorsal intake humps
         const hm = M(new THREE.SphereGeometry(1, 16, 8), B2, s*x, 0.18, 0.2 - x*0.25); hm.scale.set(0.5, 0.22, 1.6); SH.add(hm);
         const ik = M(rbox(0.62, 0.16, 0.12, 0.04), m.rub, s*x, 0.33, 1.4 - x*0.25); ik.rotation.x = -0.25; SH.add(ik);
         SH.add(M(rbox(0.7, 0.08, 0.3, 0.02), exh, s*x, 0.12, -1.55 - (x > 2 ? 0.55 : 0)));                         // slot exhaust on the upper trailing edge
       }
-      SH.add(M(rbox(0.06, 0.03, 4.6, 0.01), redM, s*3.9, 0.23, -0.5)).rotation.y = s*0.98;                          // thin red Varn edge line
+      { const rl = M(rbox(0.06, 0.03, 4.6, 0.01), redM, s*3.9, 0.18, -0.5); rl.rotation.y = -s*0.98; SH.add(rl); }                          // thin red Varn edge line
     }
     // Hover: the fighter nose folds away and the flying wing's own nose section takes its place: the same apex, hump and four slit windows as the jet
     const CK = new THREE.Group(); F.root.add(CK); u.cock = CK; u.cockK = 0; CK.scale.setScalar(0.02); CK.visible = false;
     CK.add(M(plate([[0, 4.5], [1.7, 3.4], [1.7, 0.6], [-1.7, 0.6], [-1.7, 3.4]], 0.3, 0.1), B2, 0, -0.05, 0));
     CK.add(M(plate([[0, 4.4], [1.6, 3.35], [1.6, 0.7], [-1.6, 0.7], [-1.6, 3.35]], 0.05, 0.01), B2d, 0, -0.22, 0));
     { const h = M(new THREE.SphereGeometry(1, 24, 12, 0, Math.PI*2, 0, Math.PI/2), B2, 0, 0.08, 2.2); h.scale.set(1.15, 0.5, 2.0); CK.add(h); }
-    for (const x of [-0.42, -0.16, 0.16, 0.42]) { const w = M(rbox(0.3, 0.05, 0.42, 0.02), glass, x, 0.42 - Math.abs(x)*0.25, 3.55 - Math.abs(x)*0.5); w.rotation.x = -0.4; w.rotation.y = -x*0.6; CK.add(w); }
-    CK.add(M(rbox(0.06, 0.03, 1.9, 0.01), redM, 0.95, 0.12, 3.5)).rotation.y = 0.98; CK.add(M(rbox(0.06, 0.03, 1.9, 0.01), redM, -0.95, 0.12, 3.5)).rotation.y = -0.98;
+    for (const x of [-0.42, -0.16, 0.16, 0.42]) { const w = M(rbox(0.3, 0.03, 0.42, 0.01), glass, x, 0.38 - Math.abs(x)*0.25, 3.55 - Math.abs(x)*0.5); w.rotation.x = -0.32; w.rotation.y = -x*0.6; CK.add(w); }
+    for (const s of [1, -1]) { const rl = M(rbox(0.06, 0.03, 1.9, 0.01), redM, s*0.95, 0.12, 3.5); rl.rotation.y = -s*0.98; CK.add(rl); }
     u.sync = dt => {   // the shell is whole in jet mode and folds away as the fighter parts unfold (and back again)
-      const want = F.mode === 'jet' ? 1 : 0; u.shellK += Math.sign(want - u.shellK)*Math.min(Math.abs(want - u.shellK), dt ? dt/0.6 : 1);
-      const k = u.shellK*u.shellK*(3 - 2*u.shellK); SH.visible = k > 0.02; SH.scale.set(Math.max(0.02, k), Math.max(0.02, 0.4 + 0.6*k), Math.max(0.02, k));
+      const want = F.mode === 'jet' && F.t > 0.85 ? 1 : 0; u.shellK += Math.sign(want - u.shellK)*Math.min(Math.abs(want - u.shellK), dt ? dt/(want ? 0.15 : 0.1) : 1);   // the shell blinks out at once, leaving the real wing halves to unfold
+      const k = u.shellK*u.shellK*(3 - 2*u.shellK); SH.visible = k > 0.02;
+      for (const n of F.names) P[n].visible = !(u.shellK >= 1 && F.t >= 1 && n !== 'body');   // in full jet form only the shell (and the body inside it) is drawn
+      if (u.turret) u.turret.position.y = 1.0 - 0.4*(1 - k); SH.scale.setScalar(1); SH.visible = k > 0.5;
       const wc = F.mode === 'hover' ? 1 : 0; u.cockK += Math.sign(wc - u.cockK)*Math.min(Math.abs(wc - u.cockK), dt ? dt/0.6 : 1);
       const c = u.cockK*u.cockK*(3 - 2*u.cockK); CK.visible = c > 0.02; CK.scale.setScalar(Math.max(0.02, c));
     };
