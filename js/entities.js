@@ -1,0 +1,501 @@
+(function(){
+'use strict';
+const G = window.G, V3 = THREE.Vector3;
+
+G.ETYPES = {
+  tank:{hp:240, r:4.5, cy:1.6, cash:120, xp:16, cls:'ground', name:'Battle tank'},
+  apc:{hp:160, r:4.5, cy:1.6, cash:90, xp:12, cls:'ground', name:'APC'},
+  aa:{hp:200, r:4.5, cy:1.8, cash:150, xp:20, cls:'ground', name:'Flak track'},
+  sam:{hp:220, r:5, cy:2, cash:220, xp:28, cls:'ground', name:'SAM launcher'},
+  fighter:{hp:150, r:7, cy:0, cash:260, xp:34, cls:'air', name:'Varn fighter'},
+  mech:{hp:520, r:8, cy:8, cash:300, xp:40, cls:'mech', name:'Varn walker'},
+  reaver:{hp:460, r:9, cy:9, cash:380, xp:50, cls:'mech', name:'Varn Reaver'},
+  colossus:{hp:3800, r:17, cy:19, cash:4000, xp:600, cls:'mech', name:'The Sovereign'},
+  bunker:{hp:520, r:9, cy:2, cash:160, xp:18, cls:'struct', name:'Bunker'},
+  hangar:{hp:900, r:15, cy:6, cash:260, xp:30, cls:'struct', name:'Hangar'},
+  tower:{hp:380, r:7, cy:12, cash:180, xp:20, cls:'struct', name:'Comms tower'},
+  depot:{hp:300, r:10, cy:4, cash:150, xp:16, cls:'struct', name:'Fuel depot'},
+  command:{hp:1200, r:15, cy:6, cash:400, xp:45, cls:'struct', name:'Command post'},
+  civ:{hp:300, r:10, cy:10, cash:0, xp:0, cls:'building', name:'Civilian building'}
+};
+
+G.spawn = function(game, type, x, z, o = {}){
+  const def = G.ETYPES[type], civ = type === 'civ';
+  const mesh = civ ? G.buildBuilding(o.w, o.h, o.d, o.tint) : G.buildEnemy(type, {ace:o.tag === 'ace', v:o.v});
+  const gh = game.world.height(x, z);
+  const mul = civ ? 1 : (1 + 0.09*(G.save.level - 1))*(0.85 + 0.15*game.m.tier);
+  const e = {type, def, cls:def.cls, team: civ ? 'neutral' : 'enemy', mesh, name: o.name || def.name,
+    pos:new V3(x, o.alt !== undefined ? o.alt : Math.max(gh, 0), z), vel:new V3(), yaw: o.yaw ?? Math.random()*6.283,
+    hp:def.hp*mul, maxHp:def.hp*mul, r:o.r || def.r, cy: civ ? o.h/2 : def.cy, alive:true, tag:o.tag || null,
+    cd:1 + Math.random()*3, lockT:0, path:o.path || null, pathI:o.pathI || 0, home:new V3(x, 0, z), t:Math.random()*100,
+    burst:0, burstCd:0, dir:null, breakT:0, vy:0, hitT:0, dmgMul:mul, w:o.w, d:o.d, h:o.h};
+  e.heavy = type === 'hangar' || type === 'command' || type === 'bunker' || (civ && o.h > 30);
+  if (civ) { e.r = Math.max(o.w, o.d)*0.55 + o.h*0.15; e.hp = e.maxHp = 300 + o.h*8; e.blocker = game.world.addBlocker({x, z, hw:o.w/2 + 0.6, hd:o.d/2 + 0.6, top:e.pos.y + o.h + 1, base:e.pos.y, h:o.h}); }
+  mesh.position.copy(e.pos); mesh.rotation.y = e.yaw;
+  mesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  game.scene.add(mesh); game.ents.push(e);
+  return e;
+};
+
+/* ---------- Mission layout (decided before terrain is built) ---------- */
+G.planMission = function(m){
+  const r = G.rng(m.seed + 99), ang = r()*Math.PI*2, dist = 500 + r()*650;
+  const C = {x:Math.sin(ang)*dist, z:Math.cos(ang)*dist + 450};
+  const L = {center:C, flats:[], r, groups:[], path:null};
+  if (m.type === 'training') L.center = {x:0, z:0};
+  if (m.type === 'base') L.flats.push({x:C.x, z:C.z, r:260});
+  if (m.type === 'city') L.flats.push({x:C.x, z:C.z, r:430});
+  if (m.type === 'rescue') for (let i = 0; i < m.n; i++) {
+    const a = r()*Math.PI*2, d = 200 + r()*650, g = {x:C.x + Math.sin(a)*d, z:C.z + Math.cos(a)*d};
+    L.groups.push(g); L.flats.push({x:g.x, z:g.z, r:70});
+  }
+  if (m.type === 'convoy') {
+    const a = r()*Math.PI, dx = Math.sin(a), dz = Math.cos(a), pts = [];
+    for (let i = 0; i <= 6; i++) { const t = -700 + i*233; pts.push({x:C.x + dx*t + (r() - 0.5)*160, z:C.z + dz*t + (r() - 0.5)*160}); }
+    L.path = pts.concat(pts.slice(1, -1).reverse());
+    for (const p of pts) L.flats.push({x:p.x, z:p.z, r:60});
+  }
+  return L;
+};
+
+G.spawnMission = function(game, L){
+  const m = game.m, n = m.n, r = L.r, C = L.center, tier = m.tier, W = game.world;
+  const around = (cx, cz, a0, a1) => { const a = r()*Math.PI*2, d = a0 + r()*(a1 - a0); return [cx + Math.sin(a)*d, cz + Math.cos(a)*d]; };
+  const sp = (type, cx, cz, a0, a1, o) => {
+    let x, z;
+    for (let i = 0; i < 14; i++) { [x, z] = around(cx, cz, a0, a1); if (W.height(x, z) > 3 || type === 'fighter') break; }
+    return G.spawn(game, type, x, z, o);
+  };
+  const air = (type, cx, cz, tag) => { const [x, z] = around(cx, cz, 100, 500); return G.spawn(game, type, x, z, {alt:W.height(x, z) + 450 + r()*250, tag}); };
+  game.objTotal = n;
+
+  switch (m.type) {
+    case 'convoy': {
+      const P = L.path.map(p => new V3(p.x, 0, p.z));
+      for (let i = 0; i < n; i++) {
+        const b = P[0], d = new V3().subVectors(P[1], P[0]).normalize();
+        G.spawn(game, i % 3 === 2 ? 'apc' : 'tank', b.x - d.x*i*26, b.z - d.z*i*26, {path:P, pathI:1, tag:'obj'});
+      }
+      for (let i = 0; i < 1 + (tier > 1); i++) G.spawn(game, 'aa', P[0].x - 20 - i*30, P[0].z - 20, {path:P, pathI:1});
+      for (let i = 0; i < tier; i++) sp('tank', C.x, C.z, 100, 500);
+      if (tier === 3) sp('sam', C.x, C.z, 300, 700);
+      break;
+    }
+    case 'base': {
+      const order = ['command', 'hangar', 'hangar', 'tower', 'depot', 'bunker', 'bunker', 'depot', 'bunker', 'tower', 'hangar', 'bunker'];
+      const spots = [[0, 0], [-95, 45], [95, 45], [0, -115], [-115, -80], [115, -80], [-45, 130], [60, 130], [160, -10], [-160, -10], [0, 190], [-170, 100]];
+      for (let i = 0; i < n; i++) { const s = spots[i % spots.length]; G.spawn(game, order[i % order.length], C.x + s[0], C.z + s[1], {tag:'obj', yaw:(r() < 0.5 ? 0 : Math.PI/2)}); }
+      for (let i = 0; i < 2 + tier; i++) { const a = i/(2 + tier)*Math.PI*2; G.spawn(game, 'aa', C.x + Math.sin(a)*200, C.z + Math.cos(a)*200); }
+      for (let i = 0; i < 1 + tier; i++) sp('tank', C.x, C.z, 60, 220);
+      if (tier >= 2) sp('sam', C.x, C.z, 230, 300);
+      if (tier === 3) { sp('mech', C.x, C.z, 50, 200); sp('mech', C.x, C.z, 50, 200); }
+      break;
+    }
+    case 'rescue': {
+      for (const g of L.groups) {
+        const mesh = G.buildCivilians(), y = W.height(g.x, g.z); mesh.position.set(g.x, y, g.z); game.scene.add(mesh);
+        game.civGroups.push({pos:new V3(g.x, y, g.z), prog:0, done:false, mesh});
+        sp('tank', g.x, g.z, 70, 140); sp(tier >= 2 ? 'mech' : 'tank', g.x, g.z, 70, 160);
+      }
+      for (let i = 0; i < tier; i++) sp('aa', C.x, C.z, 100, 600);
+      break;
+    }
+    case 'city': {
+      const tints = [0xffffff, 0xf2e6d8, 0xdfe7ef, 0xf0d9c8, 0xe0e0d0];
+      for (let gx = -6; gx <= 6; gx++) for (let gz = -6; gz <= 6; gz++) {
+        const x = gx*62, z = gz*62; if (Math.hypot(x, z) > 380 || r() > 0.78) continue;
+        const w = 18 + r()*20, d = 18 + r()*20, h = 10 + r()*(Math.hypot(x, z) < 160 ? 55 : 25);
+        G.spawn(game, 'civ', C.x + x, C.z + z, {w, d, h, tint:tints[Math.floor(r()*tints.length)], yaw:0});
+      }
+      const kinds = ['tank', 'mech', 'aa', 'tank', 'apc', 'mech'];
+      for (let i = 0; i < n; i++) {
+        const gx = Math.floor(r()*10) - 5, gz = Math.floor(r()*10) - 5, alongX = r() < 0.5;
+        const x = C.x + (alongX ? gx*62 + (r() - 0.5)*40 : gx*62 + 31), z = C.z + (alongX ? gz*62 + 31 : gz*62 + (r() - 0.5)*40);
+        G.spawn(game, kinds[i % kinds.length], x, z, {tag:'obj'});
+      }
+      if (tier >= 2) sp('sam', C.x, C.z, 480, 650);
+      break;
+    }
+    case 'air': {
+      game.wave = {left:n, cd:0, C};
+      for (let i = 0; i < tier; i++) sp('aa', C.x, C.z, 50, 500);
+      break;
+    }
+    case 'mech': {
+      for (let i = 0; i < n; i++) sp('mech', C.x, C.z, 60, 520, {tag:'obj'});
+      for (let i = 0; i < tier + 1; i++) sp('tank', C.x, C.z, 60, 500);
+      for (let i = 0; i < tier; i++) sp('aa', C.x, C.z, 100, 600);
+      break;
+    }
+    case 'sam': {
+      for (let i = 0; i < n; i++) { const s = sp('sam', C.x, C.z, 150, 1100, {tag:'obj'}); if (tier >= 2) sp('aa', s.pos.x, s.pos.z, 30, 70); }
+      sp('tank', C.x, C.z, 100, 500); sp('tank', C.x, C.z, 100, 500);
+      break;
+    }
+    case 'recon': {
+      for (let i = 0; i < n; i++) { const [x, z] = around(C.x, C.z, 50, 1150); game.waypoints.push({pos:new V3(x, W.height(x, z), z), done:false}); sp('aa', x, z, 120, 260); }
+      for (let i = 0; i < tier - 1; i++) sp('sam', C.x, C.z, 200, 900);
+      if (tier === 3) { air('fighter', C.x, C.z); air('fighter', C.x, C.z); }
+      break;
+    }
+  }
+  for (const s of m.sides) {
+    if (s.key === 'aa') for (let i = 0; i < 3; i++) sp('aa', C.x, C.z, 250, 900, {tag:'aaside'});
+    if (s.key === 'ace') game.aceT = 50;
+  }
+  for (let i = 0; i < 3; i++) sp('tank', 0, 0, 300, 2000);
+  game.spawnWave = () => {
+    const w = game.wave, k = Math.min(3 + (tier > 2 ? 1 : 0), w.left);
+    for (let i = 0; i < k; i++) air('fighter', w.C.x, w.C.z, 'obj');
+    w.left -= k;
+    G.hud.radio('Command', `${k} bandits inbound over the objective.`);
+  };
+  game.spawnAces = () => {
+    for (let i = 0; i < 3; i++) { const e = air('fighter', C.x, C.z, 'ace'); e.name = 'Varn ace'; e.hp *= 1.8; e.maxHp = e.hp; e.ace = true; }
+    G.hud.radio(game.wing.alive ? game.wing.name : 'Bastion', 'Three fast movers, red tails. Those are aces.');
+  };
+};
+
+/* ---------- Enemy AI ---------- */
+const tmp = new V3(), tmp2 = new V3(), tmp3 = new V3(), UP = new V3(0, 1, 0);
+const TA = new V3(), TQ = new THREE.Quaternion();
+function pickTarget(game, e, range, airOnly){
+  const P = game.player, W = game.wing; let best = null, bd = range;
+  if (e.onlyP) return P.alive && e.pos.distanceTo(P.pos) < range ? P : null;
+  if (e.zone) {
+    // Ground units tied to a waypoint only fight inside that waypoint's area.
+    const zr = 1500, inZ = t => Math.hypot(t.pos.x - e.zone.x, t.pos.z - e.zone.z) < zr;
+    if (P.alive && (!airOnly || !P.groundClutter()) && inZ(P)) { const d = e.pos.distanceTo(P.pos)*0.8; if (d < bd) { bd = d; best = P; } }
+    if (W.alive && inZ(W)) { const d = e.pos.distanceTo(W.pos); if (d < bd) { bd = d; best = W; } }
+    return best;
+  }
+  if (P.alive && (!airOnly || !P.groundClutter())) { const d = e.pos.distanceTo(P.pos)*0.8; if (d < bd) { bd = d; best = P; } }
+  if (W.alive) { const d = e.pos.distanceTo(W.pos); if (d < bd) { bd = d; best = W; } }
+  return best;
+}
+G.pickTarget = pickTarget;
+
+function shoot(game, e, from, tgt, speed, dmg, o = {}){
+  if (e.noFire) return;
+  const dist = from.distanceTo(tgt.pos), lead = (o.lead ?? 0.7)*dist/speed;
+  if (tgt === game.player && tgt.mode === 'mech') o.err = (o.err || 4)*1.7;   // a mech on the ground is a small, hard target
+  tmp.copy(tgt.pos).addScaledVector(tgt.vel, lead);
+  tmp.x += (Math.random() - 0.5)*(o.err || 4); tmp.y += (Math.random() - 0.5)*(o.err || 4); tmp.z += (Math.random() - 0.5)*(o.err || 4);
+  const v = tmp.sub(from).normalize().multiplyScalar(speed);
+  game.bullets.push({pos:from.clone(), vel:v.clone(), life:o.life || 4, dmg:dmg*e.dmgMul*0.9, team:'enemy', by:'enemy', color:o.color || 0xff8a5a,
+    len:o.len || 4, w:o.w || 0.5, splash:o.splash || 0, prox:o.prox || 0, noGround:!!e.noTerrain});
+}
+
+/* SAM sites and flak tracks can't track a mech in ground clutter, but their crews carry a close-in machine gun:
+   inside 650 m with a clear line of sight they hose the mech with short bursts. */
+function smallArms(game, e, dt){
+  const P = game.player;
+  if (e.saCd === undefined) { e.saCd = 0.6 + Math.random()*1.6; e.saT = 0; e.saRof = 0; }
+  e.saCd -= dt;
+  if (e.saT > 0) {
+    e.saT -= dt; e.saRof -= dt;
+    const tur = e.mesh.userData.turret; if (tur) tur.rotation.y = Math.atan2(P.pos.x - e.pos.x, P.pos.z - e.pos.z) - e.yaw;
+    if (e.saRof <= 0 && P.alive) {
+      e.saRof = 0.085;
+      if (game.sees(e, P)) {
+        const s = Math.random() < 0.5 ? 1 : -1, c = Math.cos(e.yaw), sn = Math.sin(e.yaw);
+        shoot(game, e, tmp2.set(e.pos.x + c*1.6*s, e.pos.y + 3.1, e.pos.z - sn*1.6*s), P, 700, 6.5, {err:4 + e.pos.distanceTo(P.pos)*0.011, color:0xfff0b0, len:2.6, w:0.26, lead:1, life:1.6});
+        G.audio.shot(e.pos, 'mg');
+      }
+    }
+    return true;
+  }
+  if (!P.alive || !P.groundClutter() || e.saCd > 0) return false;
+  if (e.zone && Math.hypot(P.pos.x - e.zone.x, P.pos.z - e.zone.z) > 1500) return false;
+  if (e.pos.distanceTo(P.pos) > 650 || !game.sees(e, P)) { e.saCd = 0.4; return false; }
+  e.saT = 0.9 + Math.random()*0.6; e.saCd = 2 + Math.random()*1.5;
+  if (game.time - (game.smallArmsT ?? -99) > 12) { game.smallArmsT = game.time; G.hud.flash('SMALL ARMS FIRE · AA CREWS ENGAGING'); }
+  return true;
+}
+
+/* ---------- The Sovereign (chapter 6 boss) ----------
+   Slow, heavy walker that always faces its target. Four attacks, each telegraphed:
+   beam cannon (capacitor rings glow for 1.5 s, then a 1.4 s stream of heavy bolts), shoulder missile salvo (pods pitch up first),
+   talon rotary bursts between the big attacks, and a stomp shockwave when a grounded mech or hover gets inside 80 m (leg lifts for 0.9 s).
+   Below half health it vents its core, calls two Reavers once, and everything cycles faster. */
+const SV = new V3(), SV2 = new V3();
+G.updateSovereign = function(game, e, dt){
+  const W = game.world, P = game.player, U = e.mesh.userData;
+  if (!e.sv) e.sv = {beamCd:4, misCd:8, gunCd:2, stompCd:3, st:'idle', stT:0, burst:0, ph:1, walk:0};
+  const S = e.sv, ph2 = e.hp < e.maxHp*0.5, fast = ph2 ? 0.65 : 1;
+  if (ph2 && S.ph === 1) {
+    S.ph = 2; G.hud.flash('SOVEREIGN · CORE VENTING'); G.audio.boom(e.pos, 1.4); game.fx.explosion(SV.copy(e.pos).setY(e.pos.y + 40), 1.6);
+    G.hud.radio(G.OFFICER ? G.OFFICER.short : 'Bastion', 'Its core is venting. It’s hurt, Kestrel, and it’s calling for help. Finish it!');
+    for (let k = 0; k < 2; k++) { const a = e.yaw + (k ? 1 : -1)*1.2, x = e.pos.x + Math.sin(a)*90, z = e.pos.z + Math.cos(a)*90;
+      if (W.height(x, z) > 0) { const r = G.spawn(game, 'reaver', x, z, {}); r.zone = e.zone; } }
+  }
+  const tgt = G.pickTarget(game, e, 2200, false), vis = tgt ? game.sees(e, tgt) : false;
+  let moving = false, d = 1e9;
+  if (tgt) {
+    SV.set(tgt.pos.x - e.pos.x, 0, tgt.pos.z - e.pos.z); d = SV.length();
+    // turn toward the target at a heavy, readable rate
+    let dy = Math.atan2(SV.x, SV.z) - e.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    e.yaw += Math.max(-dt*0.7, Math.min(dt*0.7, dy));
+    if (S.st === 'idle' && !e.frozen && d > 420) { SV.multiplyScalar(1/d); const nx = e.pos.x + SV.x*7*dt, nz = e.pos.z + SV.z*7*dt; if (W.height(nx, nz) > 0) { e.pos.x = nx; e.pos.z = nz; moving = true; } }
+  }
+  S.beamCd -= dt; S.misCd -= dt; S.gunCd -= dt; S.stompCd -= dt; if (S.st !== 'idle') S.stT -= dt;
+  const grounded = P.alive && P.mode !== 'jet' && P.pos.y - Math.max(W.height(P.pos.x, P.pos.z), 0) < 30;
+  const pd = Math.hypot(P.pos.x - e.pos.x, P.pos.z - e.pos.z);
+  if (S.st === 'idle' && tgt && !e.noFire) {
+    if (grounded && pd < 80 && S.stompCd <= 0) { S.st = 'stomp'; S.stT = 0.9; G.hud.flash('STOMP · GET CLEAR'); G.audio.tone(70, 0.9, 'sawtooth', 0.12, 40); }
+    else if (vis && S.beamCd <= 0 && d < 1700) { S.st = 'charge'; S.stT = 1.5; G.audio.tone(180, 1.5, 'sawtooth', 0.09, 900); if (tgt === P) G.hud.flash('BEAM CHARGING'); }
+    else if (vis && S.misCd <= 0 && d < 2000) { S.st = 'salvo'; S.stT = 1.2; S.fired = 0; }
+  }
+  // beam: charge glow, then stream
+  if (S.st === 'charge') { U.beamM.emissiveIntensity = 0.3 + 4*(1 - S.stT/1.5); if (S.stT <= 0) { S.st = 'beam'; S.stT = 1.4; S.bCd = 0; G.audio.shot(e.pos, 'shell'); } }
+  else if (S.st === 'beam') {
+    U.beamM.emissiveIntensity = 4 + Math.random()*1.5; S.bCd -= dt;
+    if (tgt && S.bCd <= 0) { S.bCd = 0.055; U.muzzle.getWorldPosition(SV2);
+      shootFrom(game, e, SV2, tgt, 760, 16, {color:0xff4a20, len:12, w:2.2, err:3.5, lead:0.6, splash:5}); }
+    if (S.stT <= 0) { S.st = 'idle'; S.beamCd = 7.5*fast; U.beamM.emissiveIntensity = 0.3; }
+  } else if (U.beamM.emissiveIntensity > 0.3 && S.st !== 'charge') U.beamM.emissiveIntensity = Math.max(0.3, U.beamM.emissiveIntensity - dt*6);
+  // missile salvo: pods pitch up, then launch one missile every 0.18 s
+  if (S.st === 'salvo') {
+    const n = ph2 ? 8 : 5, k = 1 - S.stT/1.2;
+    if (U.pods) U.pods.forEach(p => p.rotation.x = -0.35 - 0.6*Math.min(1, k*3));
+    if (k > 0.3 && S.fired < n && tgt && (S.mCd = (S.mCd || 0) - dt) <= 0) { S.mCd = 0.16;
+      const pod = U.pods[S.fired % 2]; pod.getWorldPosition(SV2); SV2.y += 4;
+      game.launchMissile(SV2.clone(), SV.set((Math.random() - 0.5)*0.4, 1, (Math.random() - 0.5)*0.4).normalize(), tgt, {team:'enemy', speed:125, max:300, turn:1.7, dmg:95*e.dmgMul, life:11});
+      S.fired++; G.audio.missile(); }
+    if (S.stT <= 0 && S.fired >= n) { S.st = 'idle'; S.misCd = 11*fast; if (U.pods) U.pods.forEach(p => p.rotation.x = -0.35); }
+    else if (S.stT <= -2) { S.st = 'idle'; S.misCd = 11*fast; }
+  }
+  // stomp: raise a leg, slam, shockwave
+  if (S.st === 'stomp') {
+    const k = Math.max(0, S.stT/0.9);
+    if (U.legs) for (const i of [0, 1]) U.legs[i].rotation.x = -0.4*(1 - k)*(S.stT > 0 ? 1 : 0);   // rears up on its front legs
+    if (S.stT <= 0) {
+      S.st = 'idle'; S.stompCd = 8*fast; if (U.legs) for (const L of U.legs) L.rotation.x = 0;
+      const c = SV2.set(e.pos.x, Math.max(W.height(e.pos.x, e.pos.z), 0) + 2, e.pos.z);
+      game.fx.explosion(c, 1.8); for (let i = 0; i < 10; i++) { const a = i/10*6.283; game.fx.dust(SV.set(c.x + Math.sin(a)*45, c.y, c.z + Math.cos(a)*45)); }
+      G.audio.boom(c, 1.6); P.shake = (P.shake || 0) + 2.5;
+      if (grounded && pd < 85) { P.damage(170*e.dmgMul*(1 - pd/100), c.clone(), 'blast');
+        SV.set(P.pos.x - e.pos.x, 0, P.pos.z - e.pos.z).normalize(); P.vel.x += SV.x*55; P.vel.z += SV.z*55; P.vel.y += 22; }
+    }
+  }
+  // talon rotary: short bursts whenever nothing bigger is happening
+  if (S.st === 'idle' && tgt && vis && !e.noFire && d < 1300) {
+    if (S.burst > 0) { S.burst -= dt; S.rCd = (S.rCd || 0) - dt;
+      if (S.rCd <= 0) { S.rCd = 0.08; S.side = !S.side; const gun = S.side && U.gun2 ? U.gun2 : U.gun; gun.getWorldPosition(SV2);   // rotary and twin autocannon trade shots
+        shootFrom(game, e, SV2, tgt, gun === U.gun ? 620 : 700, gun === U.gun ? 9 : 12, {color:gun === U.gun ? 0xffb070 : 0xffd080, len:5, w:0.8, err:9}); } }
+    else if (S.gunCd <= 0) { S.burst = 1.3; S.gunCd = 3.2*fast; G.audio.shot(e.pos, 'bolt'); }
+  }
+  // gait, core pulse, arm aim
+  const gh = Math.max(W.height(e.pos.x, e.pos.z), -1); e.pos.y = gh;
+  if (moving) { S.walk += dt*2.2; if (Math.sin(S.walk) * Math.sin(S.walk - dt*2.2) < 0) { G.audio.boom(e.pos, 0.5); P.shake = (P.shake || 0) + (pd < 400 ? 0.4 : 0); } }
+  if (U.legs && S.st !== 'stomp') U.legs.forEach((L, i) => {   // four legs in diagonal pairs: lift, swing, plant
+    const ph = S.walk + (i === 0 || i === 3 ? 0 : Math.PI), lift = moving ? Math.max(0, Math.sin(ph))*0.22 : 0;
+    L.rotation.x += (-lift - L.rotation.x)*Math.min(1, dt*8); L.rotation.y = (L.userData.yaw0 || 0) + (moving ? Math.cos(ph)*0.1*(i < 2 ? 1 : -1) : 0); });
+  if (U.hull) { U.hull.position.y = 7.4 + (moving ? Math.abs(Math.sin(S.walk))*0.25 : 0); U.hull.rotation.z = moving ? Math.sin(S.walk)*0.03 : 0; }
+  if (U.glow) U.glow.emissiveIntensity = (ph2 ? 2.6 : 1.2) + Math.sin(e.t*(ph2 ? 9 : 3))*(ph2 ? 0.9 : 0.3);
+  if (U.fores && tgt) { const up = Math.atan2((tgt.pos.y + (tgt.cy || 0)) - (e.pos.y + 30), Math.max(d, 1)); U.fores.forEach(f => f.rotation.x += (Math.max(-0.9, Math.min(0.5, -up)) - f.rotation.x)*Math.min(1, dt*3)); }
+  e.mesh.position.copy(e.pos); e.mesh.rotation.y = e.yaw;
+};
+function shootFrom(game, e, from, tgt, speed, dmg, o){ shoot(game, e, from, tgt, speed, dmg, o); }
+
+G.updateEnemy = function(game, e, dt){
+  const W = game.world, P = game.player;
+  e.t += dt; e.cd -= dt; if (e.hitT > 0) e.hitT -= dt;
+  const jam = P.jam;
+  const px0 = e.pos.x, py0 = e.pos.y, pz0 = e.pos.z;
+  if (e.type === 'colossus') { e.kb = null; e.stun = 0; }   // far too heavy to knock back or stagger
+  // Sword knockback and stagger (ground units and walkers).
+  if (e.kb) {
+    e.pos.x += e.kb.x*dt; e.pos.z += e.kb.z*dt; e.kb.multiplyScalar(Math.exp(-dt*5));
+    if (e.kb.lengthSq() < 0.5) e.kb = null;
+  }
+  if (e.stun > 0) {
+    e.stun -= dt;
+    const gh = Math.max(W.height(e.pos.x, e.pos.z), -1); e.pos.y = Math.max(gh, e.pos.y - 30*dt);
+    W.pushOut && W.pushOut(e.pos, e.r*0.6, e.pos.y);
+    e.mesh.position.copy(e.pos); e.mesh.rotation.y = e.yaw;
+    e.mesh.rotation.x = -Math.min(0.3, e.stun*0.35); e.mesh.rotation.z = Math.sin(e.t*34)*0.05*Math.min(1, e.stun*2);
+    if (e.stun <= 0) { e.mesh.rotation.x = 0; e.mesh.rotation.z = 0; }
+    if (dt > 0) e.vel.set((e.pos.x - px0)/dt, (e.pos.y - py0)/dt, (e.pos.z - pz0)/dt);
+    return;
+  }
+  switch (e.type) {
+    case 'colossus': { G.updateSovereign(game, e, dt); break; }
+    case 'tank': case 'apc': case 'aa': case 'sam': {
+      const spd = e.type === 'apc' ? 11 : 8;
+      if (e.path) {
+        const t = e.path[e.pathI]; tmp.set(t.x - e.pos.x, 0, t.z - e.pos.z);
+        const d = tmp.length();
+        if (d < 14) e.pathI = (e.pathI + 1) % e.path.length;
+        else { tmp.multiplyScalar(1/d); e.pos.addScaledVector(tmp, spd*dt); e.yaw = Math.atan2(tmp.x, tmp.z); }
+      } else if (e.type === 'tank' || e.type === 'apc') {
+        if (!e.wp || e.t > e.wpT) { e.wp = new V3(e.home.x + (Math.random() - 0.5)*180, 0, e.home.z + (Math.random() - 0.5)*180); e.wpT = e.t + 12 + Math.random()*10; }
+        tmp.set(e.wp.x - e.pos.x, 0, e.wp.z - e.pos.z); const d = tmp.length();
+        if (d > 8) { tmp.multiplyScalar(1/d); const nx = e.pos.x + tmp.x*spd*0.6*dt, nz = e.pos.z + tmp.z*spd*0.6*dt;
+          if (W.height(nx, nz) > 1) { e.pos.x = nx; e.pos.z = nz; e.yaw = Math.atan2(tmp.x, tmp.z); } else e.wpT = 0; }
+      }
+      if (W.pushOut(e.pos, 4.5, e.pos.y)) e.wpT = 0;
+      e.pos.y = Math.max(W.height(e.pos.x, e.pos.z), -1);
+      e.mesh.position.copy(e.pos); e.mesh.rotation.y = e.yaw;
+      if (e.mesh.userData.spin) e.mesh.userData.spin.rotation.y += dt*2.6;
+      const airOnly = e.type === 'aa' || e.type === 'sam';
+      if (airOnly && !e.noFire) smallArms(game, e, dt);
+      const range = {tank:950, apc:600, aa:1100, sam:1900}[e.type];
+      const tgt = pickTarget(game, e, range, airOnly);
+      if (!tgt || e.noFire) { e.lockT = Math.max(0, e.lockT - dt); break; }
+      const tur = e.mesh.userData.turret;
+      if (tur && !(e.saT > 0)) tur.rotation.y = Math.atan2(tgt.pos.x - e.pos.x, tgt.pos.z - e.pos.z) - e.yaw;
+      const muzzle = tmp2.copy(e.pos); muzzle.y += 2.6;
+      const vis = game.sees(e, tgt);   // hills and buildings block fire and lock-ons
+      if (e.type === 'tank' && vis && e.cd <= 0) {
+        shoot(game, e, muzzle, tgt, 320, 42, {color:0xffb070, len:6, w:0.7, splash:9, err:7});
+        e.cd = 2.8 + Math.random()*1.4; G.audio.shot(e.pos, 'shell');
+      }
+      if (e.type === 'apc') {
+        if (e.burst > 0) { e.burst -= dt; e.burstCd -= dt; if (vis && e.burstCd <= 0) { e.burstCd = 0.12; shoot(game, e, muzzle, tgt, 620, 5, {err:14, color:0xffd080, len:3, w:0.3}); } }
+        else if (vis && e.cd <= 0) { e.burst = 1; e.cd = 3 + Math.random()*2; }
+      }
+      if (e.type === 'aa') {
+        if (e.burst > 0) { e.burst -= dt; e.burstCd -= dt; if (vis && e.burstCd <= 0) { e.burstCd = 0.1; shoot(game, e, muzzle, tgt, 720, 4.5, {err:22, color:0xffe0a0, len:4, w:0.45, prox:8, lead:0.9}); } }
+        else if (vis && e.cd <= 0) { e.burst = 1.4; e.cd = 2.2 + Math.random(); }
+      }
+      if (e.type === 'sam') {
+        const l = e.mesh.userData.launcher; if (l) l.rotation.x = -0.4 - Math.min(0.6, Math.max(0, (tgt.pos.y - e.pos.y)/800));
+        if (vis) { e.lockT += dt*(tgt === P && jam ? 0.5 : 1); if (tgt === P) P.lockedBy++; } else e.lockT = Math.max(0, e.lockT - dt*1.5);
+        if (vis && e.lockT >= 2.8 && e.cd <= 0) { game.launchMissile(muzzle.clone().add(tmp3.set(0, 3, 0)), UP, tgt, {team:'enemy', speed:140, max:330, turn:1.9, dmg:170*e.dmgMul, life:12}); e.cd = 9; e.lockT = 0; }
+      }
+      break;
+    }
+    case 'fighter': {
+      if (!e.dir) e.dir = new V3(Math.sin(e.yaw), 0, Math.cos(e.yaw));
+      const tgt = pickTarget(game, e, 6000, false);
+      const des = tmp;
+      if (e.breakT > 0) { e.breakT -= dt; des.copy(e.breakDir); }
+      else if (tgt) {
+        des.copy(tgt.pos).addScaledVector(tgt.vel, 0.8).sub(e.pos);
+        if (des.length() < 160) { e.breakT = 3.6; e.breakDir = new V3(Math.random() - 0.5, 0.25, Math.random() - 0.5).normalize(); }
+      } else des.set(Math.sin(e.t*0.2), 0, Math.cos(e.t*0.2));
+      des.normalize();
+      const gh = Math.max(W.height(e.pos.x, e.pos.z), 0);
+      // Terrain look-ahead along the current flight path: pull up before hills, not after.
+      const spdNow = Math.max(e.vel.length(), 100); let need = gh + 140 - e.pos.y, danger = e.pos.y < gh + 120;
+      for (const t of [1, 2, 3.5, 5]) {
+        const px = e.pos.x + e.dir.x*spdNow*t, pz = e.pos.z + e.dir.z*spdNow*t, py = e.pos.y + e.dir.y*spdNow*t;
+        const hh = Math.max(W.height(px, pz), 0) + 110;
+        if (py < hh) { danger = true; need = Math.max(need, hh - py); }
+      }
+      if (danger) { e.breakT = 0; des.y = Math.max(des.y, Math.min(0.75, 0.3 + need/300)); }
+      e.pullUp = danger;
+      if (e.pos.y > gh + 1400) des.y = Math.min(des.y, -0.2);
+      des.y = Math.max(-0.45, Math.min(0.6, des.y)); des.normalize();
+      // Turn like an aircraft: limited turn rate that builds up and eases off, no instant flicks.
+      const prev = tmp3.copy(e.dir), ang = e.dir.angleTo(des), maxRate = e.pullUp ? 1.1 : e.ace ? 0.62 : 0.46;
+      const wantRate = Math.min(maxRate, ang*1.1);
+      e.tRate = (e.tRate || 0) + (wantRate - (e.tRate || 0))*Math.min(1, dt*1.1);
+      const maxA = e.tRate*dt;
+      if (ang > maxA) {
+        TA.crossVectors(e.dir, des); if (TA.lengthSq() < 1e-6) TA.set(0, 1, 0);   // target dead astern: pick a turn direction
+        TQ.setFromAxisAngle(TA.normalize(), maxA); e.dir.applyQuaternion(TQ).normalize();
+      } else e.dir.copy(des);
+      e.turnSign = Math.sign(prev.x*des.z - prev.z*des.x) || 0;
+      const spd = ((e.ace ? 190 : 165) + game.m.tier*5)*(e.slow ? 0.62 : 1);
+      e.vel.copy(e.dir).multiplyScalar(spd); e.pos.addScaledVector(e.vel, dt);
+      // Failsafe: never let a jet pass through the ground.
+      const floor = Math.max(W.height(e.pos.x, e.pos.z), 0) + 25;
+      if (e.pos.y < floor) { e.pos.y = floor; if (e.dir.y < 0.25) { e.dir.y = 0.25; e.dir.normalize(); } }
+      const wantBank = -e.turnSign*Math.min(1.05, e.tRate*2.2);
+      e.bank = (e.bank || 0) + (wantBank - (e.bank || 0))*Math.min(1, dt*1.6);
+      e.mesh.position.copy(e.pos); e.mesh.lookAt(tmp2.copy(e.pos).add(e.dir)); e.mesh.rotateZ(e.bank);
+      if (tgt && !e.noFire) {
+        const vis = game.sees(e, tgt);
+        tmp2.subVectors(tgt.pos, e.pos); const d = tmp2.length(), a = vis ? e.dir.angleTo(tmp2) : 9;
+        if (a < 0.07 && d < 720) { e.burstCd -= dt; if (e.burstCd <= 0) { e.burstCd = 0.13; shoot(game, e, e.pos.clone().addScaledVector(e.dir, 6), tgt, 950, 6.5, {err:6, color:0xff7766, len:5, w:0.4, lead:1}); } }
+        if (a < 0.5 && d > 350 && d < 1700) { e.lockT += dt*(tgt === P && jam ? 0.5 : 1); if (tgt === P) P.lockedBy++; } else e.lockT = Math.max(0, e.lockT - dt);
+        if (e.lockT > 2.6 && e.cd <= 0) { game.launchMissile(e.pos.clone().addScaledVector(e.dir, 4), e.dir, tgt, {team:'enemy', speed:spd, max:370, turn:2.1, dmg:150*e.dmgMul, life:10}); e.cd = 13; e.lockT = 0; }
+      }
+      break;
+    }
+    case 'reaver': {
+      /* Melee hunter: sprints at its target, leaps to close distance, winds up (visor flares, blades raised) and slashes.
+         A sword hit during the wind-up staggers it. Its reactive plating soaks most gunfire (see damageEnt). */
+      const tgt = pickTarget(game, e, 1600, false), U = e.mesh.userData, P = game.player;
+      const gh0 = Math.max(W.height(e.pos.x, e.pos.z), -1); let moving = false;
+      e.st = e.st || 'chase'; e.stT = (e.stT || 0) - dt; e.atkCd = (e.atkCd || 0) - dt; e.leapCd = (e.leapCd ?? 2) - dt;
+      if (e.st === 'stagger') { if (e.stT <= 0) e.st = 'chase'; }
+      else if (tgt) {
+        tmp.set(tgt.pos.x - e.pos.x, 0, tgt.pos.z - e.pos.z); const d = tmp.length(), high = tgt.pos.y - gh0 > 55;
+        const want = Math.atan2(tmp.x, tmp.z); e.yaw += Math.atan2(Math.sin(want - e.yaw), Math.cos(want - e.yaw))*Math.min(1, dt*(e.st === 'windup' ? 2 : 8));
+        if (e.st === 'windup') {
+          if (e.stT <= 0) {
+            e.st = 'strike'; e.stT = 0.35; G.audio.swoosh && G.audio.swoosh();
+            if (d < 25 && Math.abs(tgt.pos.y - e.pos.y) < 18) {
+              const amt = 150*e.dmgMul;
+              if (tgt === P) { P.damage(amt, e.pos, 'melee'); tmp.multiplyScalar(1/Math.max(d, 1)); P.vel.x += tmp.x*14; P.vel.z += tmp.z*14; P.shake += 0.9; G.audio.impact('metal', 0.9); }
+              else tgt.hit(amt);
+            }
+          }
+        } else if (e.st === 'strike') { if (e.stT <= 0) { e.st = 'chase'; e.atkCd = 1.1; } }
+        else {
+          if (d < 20 && e.atkCd <= 0 && !high && e.onGround !== false) { e.st = 'windup'; e.stT = 0.5; G.audio.tone(140, 0.45, 'sawtooth', 0.05, 320); }
+          else if (!e.frozen) {
+            if (e.onGround !== false && e.leapCd <= 0 && d > 45 && d < 220 && !high) {
+              // Leap: cover the gap in one arcing jump.
+              const T = 1.3; e.vy = 30*T/2 + (tgt.pos.y - gh0)/T; e.onGround = false; e.leapV = new V3(tmp.x/T, 0, tmp.z/T); e.leapCd = 3.5 + Math.random()*2; G.audio.thump(0.6);
+            } else if (e.onGround !== false && d > 16) {
+              const sp = d > 400 ? 30 : 24; tmp.multiplyScalar(1/d); const nx = e.pos.x + tmp.x*sp*dt, nz = e.pos.z + tmp.z*sp*dt;
+              if (W.height(nx, nz) > 0) { e.pos.x = nx; e.pos.z = nz; moving = true; }
+            }
+          }
+        }
+      }
+      if (e.leapV && e.onGround === false) { e.pos.x += e.leapV.x*dt; e.pos.z += e.leapV.z*dt; }
+      W.pushOut(e.pos, 5, e.pos.y);
+      const gh = Math.max(W.height(e.pos.x, e.pos.z), -1);
+      e.vy -= 30*dt; e.pos.y += e.vy*dt;
+      if (e.pos.y <= gh) { if (e.onGround === false && e.leapV) { e.leapV = null; game.fx.dust(tmp2.set(e.pos.x, gh, e.pos.z)); } e.pos.y = gh; e.vy = 0; e.onGround = true; }
+      e.mesh.position.copy(e.pos); e.mesh.rotation.y = e.yaw;
+      // Pose: running gait, blades raised in the wind-up, cross-body slash on the strike, slumped when staggered.
+      const k = e.st === 'windup' ? 1 - Math.max(0, e.stT)/0.5 : 0, run = moving ? Math.sin(e.t*7) : 0;
+      if (U.legs) { const a = moving ? run*0.6 : e.onGround === false ? 0.5 : 0; U.legs[0].rotation.x = a; U.legs[1].rotation.x = e.onGround === false ? -0.3 : -a; }
+      if (U.hull) { U.hull.position.y = 6.0 + (moving ? Math.abs(run)*0.35 : 0); U.hull.rotation.x = e.st === 'stagger' ? -0.35 : moving ? 0.22 : e.st === 'windup' ? -0.15*k : 0.08; }
+      if (U.arms) U.arms.forEach((A, i) => { const s = i ? 1 : -1;
+        if (e.st === 'windup') { A.rotation.x = -1.9*k; A.rotation.z = s*0.4*k; }
+        else if (e.st === 'strike') { const q = 1 - Math.max(0, e.stT)/0.35; A.rotation.x = -1.9 + 2.9*Math.min(1, q*2.2); A.rotation.z = s*(0.4 - 0.9*q); }
+        else { A.rotation.x = moving ? 0.5 - run*s*0.3 : 0.25; A.rotation.z = 0; } });
+      if (U.visor) U.visor.scale.set(1, e.st === 'windup' ? 1 + 2*k : 1, 1);
+      break;
+    }
+    case 'mech': {
+      const tgt = pickTarget(game, e, 1400, false), vis = tgt ? game.sees(e, tgt) : false;
+      let moving = false;
+      if (tgt) {
+        tmp.set(tgt.pos.x - e.pos.x, 0, tgt.pos.z - e.pos.z); const d = tmp.length();
+        e.yaw = Math.atan2(tmp.x, tmp.z);
+        const gh0 = Math.max(W.height(e.pos.x, e.pos.z), -1);
+        if (!e.frozen && (d > 320 || (!vis && d > 60)) && tgt.pos.y - gh0 < 380) { tmp.multiplyScalar(1/d); const nx = e.pos.x + tmp.x*13*dt, nz = e.pos.z + tmp.z*13*dt; if (W.height(nx, nz) > 0) { e.pos.x = nx; e.pos.z = nz; moving = true; } }
+        if (e.burst > 0) { e.burst -= dt; e.burstCd -= dt; if (vis && e.burstCd <= 0) { e.burstCd = 0.28;
+          const side = (e.side = -(e.side || 1)), s = Math.sin(e.yaw), c = Math.cos(e.yaw);
+          shoot(game, e, tmp2.set(e.pos.x + c*3.4*side + s*3, e.pos.y + 11.5, e.pos.z - s*3.4*side + c*3), tgt, 360, 26, {color:0xff5a3c, len:5, w:1.1, err:5}); } }
+        else if (!e.noFire && vis && e.cd <= 0 && d < 1200) { e.burst = 0.6; e.cd = 1.9 + Math.random(); G.audio.shot(e.pos, 'bolt'); }
+      }
+      W.pushOut(e.pos, 6, e.pos.y);
+      const gh = Math.max(W.height(e.pos.x, e.pos.z), -1);
+      if (!e.frozen && e.onGround !== false && Math.random() < dt*0.06) { e.vy = 20; e.onGround = false; }
+      e.vy -= 30*dt; e.pos.y += e.vy*dt;
+      if (e.pos.y <= gh) { e.pos.y = gh; e.vy = 0; e.onGround = true; }
+      e.mesh.position.copy(e.pos); e.mesh.rotation.y = e.yaw;
+      const legs = e.mesh.userData.legs; if (legs) { const a = moving ? Math.sin(e.t*5)*0.45 : 0; legs[0].rotation.x = a; legs[1].rotation.x = -a; }
+      if (e.mesh.userData.hull) e.mesh.userData.hull.position.y = 6.2 + (moving ? Math.abs(Math.sin(e.t*5))*0.3 : 0);
+      const U = e.mesh.userData;
+      if (U.mixer) {
+        const st = !e.onGround ? 'Jump' : e.burst > 0 ? 'Shoot' : moving ? 'Walk' : 'Idle';
+        U.play(st, st === 'Shoot' ? 0.12 : 0.25);
+        if (U.actions.Walk) U.actions.Walk.timeScale = 1.1;
+        U.mixer.update(dt);
+      }
+      break;
+    }
+  }
+  if (e.type !== 'fighter' && dt > 0) e.vel.set((e.pos.x - px0)/dt, (e.pos.y - py0)/dt, (e.pos.z - pz0)/dt);
+};
+})();
