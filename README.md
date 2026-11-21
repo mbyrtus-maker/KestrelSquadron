@@ -1,6 +1,6 @@
 # Kestrel Squadron
 
-A 3D browser game about a transforming fighter: fly the AVF-1 Kestrel as a jet, a hover gunship (gerwalk) and a mech against the Varn Hegemony's invasion of the Halcyon archipelago. A six-chapter story campaign, free sorties, upgrades and frames, and two-player co-op.
+A 3D browser game about a transforming fighter: fly the AVF-1 Kestrel as a jet, a hover gunship (gerwalk) and a mech against the Varn Hegemony's invasion of the Halcyon archipelago. A story campaign in three volumes (the Hollow Crown, the flying carrier Ascendant, and the transforming bomber Harbinger), free sorties, upgrades and frames, two-player co-op, and controller support.
 
 **Play:** https://mbyrtus-maker.github.io/KestrelSquadron/ (once GitHub Pages is turned on for this repository: Settings → Pages → Deploy from branch `main`, folder `/`).
 
@@ -16,6 +16,7 @@ Two pilots fly together: the host flies lead and picks the mission; the friend t
 - Both pilots earn the mission reward; each pilot keeps the bounties for their own kills. Story progress belongs to the host.
 - If the wingman drops out, the AI takes their seat again. If the host leaves, the wingman's sortie ends.
 - Wingman orders don't apply to a human wingman (talk to each other instead).
+- Opening the pause menu doesn't stop the sortie for the other pilot.
 
 ### If you can't connect
 
@@ -26,6 +27,8 @@ For local testing, `?coopLocal=1` connects two tabs of the same browser without 
 ## Controls
 
 **1 / 2 / 3** jet, hover, mech · mouse steers or aims · **W/S** throttle or move · left click guns · right click missiles · **E** head lasers (hover) · **Q** draw the blade (mech) · **F** flares · **V** camera · **R** return to base · **Esc** pause. The full flight manual is in the hangar.
+
+**Controller** (any standard gamepad): left stick flies (jet) or moves (hover, mech) · right stick is throttle and rudder (jet) or look (hover, mech) · RT guns · LT missiles · RB boost · LB flares · A rise · B descend · X lasers · Y next mode · stick clicks: blade, target · D-pad: camera, missile type, wingman orders · Back RTB · Start pause. In menus the D-pad moves, A presses and B closes.
 
 ## How it's built
 

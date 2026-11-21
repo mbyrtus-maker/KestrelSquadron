@@ -51,7 +51,7 @@ G.Player = class {
   }
 
   update(dt){
-    const I = G.input, K = c => I.keys.has(c) ? 1 : 0, g = this.g, st = this.st;
+    const I = G.input, K = c => Math.max(I.keys.has(c) ? 1 : 0, (I.an && I.an[c]) || 0), g = this.g, st = this.st;   // keys, or a controller's analog sticks
     for (const k in this.cd) this.cd[k] -= dt;
     this.hits = this.hits.filter(h => (h.t -= dt*0.8) > 0);
     if (!this.alive) { this.F.update(dt); this.camera(dt); return; }
@@ -114,6 +114,7 @@ G.Player = class {
         this.yaw -= this.yawRate*dt; this.lookRate = 0;
         this.camPitch = clamp(this.camPitch + (ey*1.0*inv + (K('ArrowUp') - K('ArrowDown'))*0.9)*dt, -1.0, 1.05);
       }
+      if (I.look) { const k = 0.9 + 1.8*(G.save.sens ?? 0.5); this.yaw -= I.look.x*2.0*k*dt; this.lookRate = I.look.x*2.0*k; this.camPitch = clamp(this.camPitch - I.look.y*1.4*k*dt*inv, -1.0, 1.05); }   // controller: right stick looks and aims
       I.dx = I.dy = 0;
       const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), fw = K('KeyW') - K('KeyS'), sr = K('KeyD') - K('KeyA');
       const n = Math.hypot(fw, sr) || 1;

@@ -59,14 +59,21 @@ const STYLE = {
   shrike:   {wing:'delta',   span:4.7, nose:1.25, bodyW:0.95, num:'051', sharp:true},
   kestrelc: {wing:'swept',   span:5.4, nose:1.05, bodyW:1.0,  num:'001', twinSeat:true, stripes:true},
   gyrfalcon:{wing:'forward', span:5.2, nose:1.15, bodyW:1.0,  num:'X01', canards:true},
-  osprey:   {wing:'cranked', span:5.9, nose:1.1,  bodyW:1.15, num:'X4',  canards:true, big:true}
+  osprey:   {wing:'cranked', span:5.9, nose:1.1,  bodyW:1.15, num:'X4',  canards:true, big:true},
+  // the Varn Harbinger (volume 3 boss): a bomber planform on the same three-mode chassis, built at three times the size in targets.js
+  harbinger:{wing:'bomber',  span:7.4, nose:1.3,  bodyW:1.3,  num:'V01', big:true, armor:true, varn:true,
+    pose:{mech:{wingL:{p:[1.0,5.0,-1.5], r:[15,-10,-40]}, wingR:{p:[-1.0,5.0,-1.5], r:[15,10,40]}},   // the broad wing hangs off the back like a cape instead of standing up
+      // jet: every fighter part folds away inside the flying-wing shell (built in targets.js), and unfolds out of it on transformation
+      jet:{body:{p:[0,0,0], s:0.5}, nose:{p:[0,0,1.2], s:0.01}, wingL:{p:[1.15,0.12,-0.7], s:0.01}, wingR:{p:[-1.15,0.12,-0.7], s:0.01},
+        legL:{p:[0.85,-0.25,0.4], s:0.01}, legR:{p:[-0.85,-0.25,0.4], s:0.01}, gunpod:{p:[0,-0.6,-1.0], s:0.01}}}}
 };
 const PLAN = {
   swept:  s => [[0,1.6],[s*5.4,-0.9],[s*5.4,-1.85],[0,-1.6]],
   stub:   s => [[0,1.5],[s*4.5,-0.3],[s*4.5,-1.5],[0,-1.6]],
   delta:  s => [[0,2.6],[s*4.7,-1.5],[s*4.7,-2.05],[0,-1.9]],
   forward:s => [[0,0.9],[s*5.2,1.6],[s*5.2,0.7],[0,-1.8]],
-  cranked:s => [[0,2.8],[s*1.9,0.4],[s*5.9,-1.1],[s*5.9,-1.95],[0,-1.95]]
+  cranked:s => [[0,2.8],[s*1.9,0.4],[s*5.9,-1.1],[s*5.9,-1.95],[0,-1.95]],
+  bomber: s => [[0,4.4],[s*1.5,2.6],[s*7.4,-2.1],[s*7.4,-2.9],[s*5.7,-2.3],[s*4.3,-3.3],[s*2.3,-2.6],[0,-3.5]]   // blended arrowhead flying wing: kinked leading edge, saw-tooth trailing edge
 };
 
 /* ---------- Textures ---------- */
@@ -196,7 +203,7 @@ G.buildFighter = function(frame){
     const tipZ = PLAN[st.wing](s).filter(p => Math.abs(p[0]) > sp - 0.01).reduce((a, p) => a + p[1], 0)/2;
     g.add(M(rbox(0.28, 0.2, 1.0, 0.07), trim, s*(sp - 0.1), 0, tipZ));
     const dc = M(new THREE.PlaneGeometry(1.2, 1.2), decalM, s*sp*0.62, 0.088, tipZ*0.55 - 0.1); dc.rotation.x = -Math.PI/2; dc.castShadow = false; g.add(dc);
-    const rd = M(new THREE.PlaneGeometry(1.15, 1.15), roundelM, s*sp*0.36, 0.089, tipZ*0.32 - 0.25); rd.rotation.x = -Math.PI/2; rd.castShadow = false; g.add(rd);
+    if (!st.varn) { const rd = M(new THREE.PlaneGeometry(1.15, 1.15), roundelM, s*sp*0.36, 0.089, tipZ*0.32 - 0.25); rd.rotation.x = -Math.PI/2; rd.castShadow = false; g.add(rd); }
     for (const k of [0.36, 0.53, 0.7]) {
       const ms = new THREE.Group(); ms.add(M(cyl(0.15, 0.15, 2.0, 12), misM)); ms.add(M(new THREE.ConeGeometry(0.15, 0.55, 12).rotateX(Math.PI/2), warhead, 0, 0, 1.27));
       for (const r of [0, Math.PI/2]) { const f = M(rbox(0.7, 0.04, 0.35, 0.015), dark, 0, 0, -0.85); f.rotation.z = r; ms.add(f); }
@@ -418,7 +425,10 @@ G.buildFighter = function(frame){
   gearLeg(-1.72, -0.15, -0.55, 1.5, 0.36, false, -1);
   const F = {root, P, missiles, nozzles, feet, laserTips, footK:0, gearK:0, gearWant:0, kneeK:0, elbK:0, carryK:0, mode:'jet', t:1, from:{}, glow:glowM,
     ctl:{aimPitch:0, aimYaw:0, walk:0, walkAmt:0, block:0, swing:-1, thrust:0.3, lp:0, lr:0, lt:0}, names:Object.keys(P)};
-  for (const n of F.names) { const t = TGT.jet[n]; P[n].position.copy(t.p); P[n].quaternion.copy(t.q); P[n].scale.setScalar(t.s); }
+  const TG = st.pose ? {} : TGT;   // per-frame pose overrides on top of the shared poses
+  if (st.pose) for (const m in TGT) { TG[m] = Object.assign({}, TGT[m]); for (const n in st.pose[m] || {}) { const d = st.pose[m][n], rr = d.r || [0,0,0];
+    TG[m][n] = {p:new V3(...d.p), q:new THREE.Quaternion().setFromEuler(E.set(rr[0]*D, rr[1]*D, rr[2]*D, 'YXZ')), s:d.s ?? 1}; } }
+  for (const n of F.names) { const t = TG.jet[n]; P[n].position.copy(t.p); P[n].quaternion.copy(t.q); P[n].scale.setScalar(t.s); }
 
   const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qx = new THREE.Quaternion(), v = new V3(), v2 = new V3(), X = new V3(1, 0, 0), Y = new V3(0, 1, 0), Z = new V3(0, 0, 1), ql = new THREE.Quaternion(), qt = new THREE.Quaternion(), ANK = new V3(0, 0, -5.7), UPPER = ['body', 'nose', 'wingL', 'wingR', 'armL', 'armR', 'head'], qu = new THREE.Quaternion(), qf = new THREE.Quaternion(), qg = new THREE.Quaternion(), vs = new V3();
   F.setMode = (m, instant) => {
@@ -434,7 +444,7 @@ G.buildFighter = function(frame){
         const gk = F.gearK*F.gearK*(3 - 2*F.gearK);
         for (let i = 0; i < gearLegs.length; i++) { const g = gearLegs[i]; g.visible = F.gearK > 0.01; g.rotation.x = (1 - gk)*(i ? 1.55 : -1.6); g.scale.setScalar(0.6 + 0.4*gk); } }
       const k = F.footK*F.footK*(3 - 2*F.footK); for (const f of feet) { f.visible = k > 0.03; f.scale.set(0.8 + 0.2*k, Math.max(0.03, k), 1); } }
-    const t = F.t, e = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2)/2, Tg = TGT[F.mode];
+    const t = F.t, e = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2)/2, Tg = TG[F.mode];
     for (const n of F.names) {
       const p = P[n], to = Tg[n], fr = F.from[n];
       if (t >= 1 || !fr) { p.position.copy(to.p); p.quaternion.copy(to.q); p.scale.setScalar(to.s); }

@@ -16,6 +16,8 @@ G.ETYPES = {
   skyflak:{hp:380, r:6, cy:2, cash:300, xp:40, cls:'air', name:'Flak turret'},
   skymis:{hp:600, r:7, cy:3, cash:420, xp:55, cls:'air', name:'Missile battery'},
   skyengine:{hp:1300, r:12, cy:0, cash:800, xp:90, cls:'air', name:'Lift engine'},
+  // The Harbinger (volume 3 boss): a transforming heavy bomber three times a Kestrel's size. Its hit sphere and class change with its mode.
+  harbinger:{hp:4800, r:19, cy:0, cash:0, xp:950, cls:'air', name:'The Harbinger'},
   bunker:{hp:520, r:9, cy:2, cash:160, xp:18, cls:'struct', name:'Bunker'},
   hangar:{hp:900, r:15, cy:6, cash:260, xp:30, cls:'struct', name:'Hangar'},
   tower:{hp:380, r:7, cy:12, cash:180, xp:20, cls:'struct', name:'Comms tower'},
@@ -363,6 +365,8 @@ G.updateSovereign = function(game, e, dt){
       G.audio.boom(c, 1.6); P.shake = (P.shake || 0) + 2.5;
       if (grounded && pd < 85) { P.damage(170*e.dmgMul*(1 - pd/100), c.clone(), 'blast');
         SV.set(P.pos.x - e.pos.x, 0, P.pos.z - e.pos.z).normalize(); P.vel.x += SV.x*55; P.vel.z += SV.z*55; P.vel.y += 22; }
+      { const Wg = game.wing, wd = Math.hypot(Wg.pos.x - e.pos.x, Wg.pos.z - e.pos.z);   // the wingman (or a co-op guest) gets stomped too
+        if (Wg.alive && Wg.mode !== 'jet' && Wg.pos.y - Math.max(W.height(Wg.pos.x, Wg.pos.z), 0) < 30 && wd < 85) Wg.hit(170*e.dmgMul*(1 - wd/100)); }
     }
   }
   // talon rotary: short bursts whenever nothing bigger is happening
@@ -382,6 +386,126 @@ G.updateSovereign = function(game, e, dt){
   if (U.glow) U.glow.emissiveIntensity = (ph2 ? 2.6 : 1.2) + Math.sin(e.t*(ph2 ? 9 : 3))*(ph2 ? 0.9 : 0.3);
   if (U.fores && tgt) { const up = Math.atan2((tgt.pos.y + (tgt.cy || 0)) - (e.pos.y + 30), Math.max(d, 1)); U.fores.forEach(f => f.rotation.x += (Math.max(-0.9, Math.min(0.5, -up)) - f.rotation.x)*Math.min(1, dt*3)); }
   e.mesh.position.copy(e.pos); e.mesh.rotation.y = e.yaw;
+};
+
+/* ---------- The Harbinger (volume 3 boss) ----------
+   Three phases, one per mode, each ending at a third of its health (damage can't carry it past a phase until it has transformed):
+   JET: big bombing runs at about 280 m over the target, strings of bombs, a dorsal gun that covers its tail, and missile pairs.
+   HOVER: hangs 110 m up and circles the target at 420 m, raking it with its gun pod and firing six-missile salvos.
+   MECH: lands on solid ground and walks at the target, firing heavy shells and missiles, and stomps anything grounded inside 110 m.
+   Each transformation takes 1.6 s, during which it is armoured and holds still. */
+const HB = new V3(), HB2 = new V3(), HB3 = new V3();
+G.HARB_MODES = ['jet', 'hover', 'mech'];
+G.harbSetMode = (e, mode) => {   // shared by the host and co-op guests
+  const F = e.mesh.userData.F; e.fm = mode; F.setMode(mode);
+  e.cls = mode === 'mech' ? 'mech' : 'air'; e.r = mode === 'mech' ? 16 : mode === 'hover' ? 17 : 19; e.cy = mode === 'mech' ? 9 : 0;
+};
+G.updateHarbinger = function(game, e, dt){
+  const W = game.world, P = game.player, U = e.mesh.userData, F = U.F, m = e.mesh;
+  if (!e.hb) { e.hb = {st:'run', stT:0, pt:null, bombCd:0, gunCd:3, misCd:8, burst:0, burstCd:0, tailCd:2, tf:0, orb:Math.random()*6.28, stompCd:4, stomp:0, walk:0, dir:new V3(Math.sin(e.yaw), 0, Math.cos(e.yaw)), spd:120, roll:0};
+    m.rotation.order = 'YXZ'; G.harbSetMode(e, 'jet'); F.setMode('jet', true); }
+  const S = e.hb, C = e.hc || e.home, gh = (x, z) => Math.max(W.height(x, z), 0);
+  const tgt = G.pickTarget(game, e, 3500, false), fire = !e.noFire && !game.over;
+  // phase change when health reaches the floor
+  const frac = e.hp/e.maxHp;
+  if (S.tf <= 0 && ((e.fm === 'jet' && frac <= 0.667) || (e.fm === 'hover' && frac <= 0.334 && S.landed))) {
+    const next = e.fm === 'jet' ? 'hover' : 'mech'; S.tf = 1.6; e.armored = true; G.harbSetMode(e, next); S.st = next;
+    G.hud.flash(`THE HARBINGER IS TRANSFORMING · ${next.toUpperCase()} MODE`); G.audio.transform(next); G.audio.tone(70, 1.0, 'sawtooth', 0.06, 50); P.shake += 0.5;
+    G.hud.radio(G.OFFICER.short, next === 'hover' ? 'It’s changing shape! Kestrel, it’s stopping in mid-air. Watch that gun pod.' : 'It’s landing. It’s standing up. Kestrel, that thing is the size of a building. Keep moving and stay off the ground near its feet.');
+    if (next === 'mech') { for (let i = 0; i < 10; i++) { const a = i/10*6.283; game.fx.dust(HB.set(e.pos.x + Math.sin(a)*30, gh(e.pos.x, e.pos.z), e.pos.z + Math.cos(a)*30)); } G.audio.boom(e.pos, 1.6); P.shake += 1.2; }
+  }
+  if (e.fm === 'hover' && frac <= 0.334 && !S.landed && S.st !== 'descend') { S.st = 'descend'; G.hud.flash('THE HARBINGER IS LOOKING FOR GROUND'); }
+  if (S.tf > 0) { S.tf -= dt; if (S.tf <= 0) e.armored = false; }
+  e.hpFloor = e.fm === 'jet' ? e.maxHp*0.667 : e.fm === 'hover' ? e.maxHp*0.334 : 0;
+  const ctl = F.ctl; ctl.walkAmt = 0; ctl.thrust = 0.5;
+  if (e.fm === 'jet') {
+    // fly: bombing runs over the target (or the waypoint), then extend and come round again
+    if (!S.pt || S.st === 'run' && Math.hypot(S.pt.x - e.pos.x, S.pt.z - e.pos.z) < 140) {
+      if (S.pt) { S.st = 'extend'; S.stT = 7; }
+      const T = tgt && Math.hypot(tgt.pos.x - C.x, tgt.pos.z - C.z) < 2500 ? tgt.pos : C; S.pt = {x:T.x, z:T.z};
+    }
+    if (S.st === 'extend' && (S.stT -= dt) <= 0) { S.st = 'run'; const T = tgt ? tgt.pos : C; S.pt = {x:T.x, z:T.z}; }
+    const alt = gh(e.pos.x, e.pos.z) + 280, des = HB;
+    if (S.st === 'run') des.set(S.pt.x - e.pos.x, 0, S.pt.z - e.pos.z).normalize(); else des.copy(S.dir).setY(0).normalize();
+    des.y = Math.max(-0.3, Math.min(0.3, (alt - e.pos.y)/300));
+    const y0 = Math.atan2(S.dir.x, S.dir.z); S.dir.lerp(des.normalize(), Math.min(1, dt*0.55)).normalize();
+    let dy = Math.atan2(S.dir.x, S.dir.z) - y0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    S.roll += (Math.max(-0.7, Math.min(0.7, -dy/dt*1.6 || 0)) - S.roll)*Math.min(1, dt*2);
+    e.pos.addScaledVector(S.dir, S.spd*dt); e.yaw = Math.atan2(S.dir.x, S.dir.z);
+    m.rotation.set(-Math.asin(S.dir.y), e.yaw, S.roll); ctl.thrust = 0.9;
+    // bombs: a string while over the run's target
+    if (fire && S.st === 'run' && Math.hypot(S.pt.x - e.pos.x, S.pt.z - e.pos.z) < 300 && (S.bombCd -= dt) <= 0) {
+      S.bombCd = 0.22; HB2.copy(e.pos); HB2.y -= 5;
+      game.bullets.push({pos:HB2.clone(), vel:HB3.copy(S.dir).multiplyScalar(S.spd*0.5).add(HB.set((Math.random() - 0.5)*8, -95, (Math.random() - 0.5)*8)).clone(), life:7, dmg:150*e.dmgMul, team:'enemy', by:'enemy', color:0x60564a, len:2.5, w:1.4, splash:24});
+      if (game.time - (S.bombT || -99) > 6) { S.bombT = game.time; G.hud.flash('BOMBS FALLING'); }
+    }
+    // the dorsal gun covers its tail
+    if (fire && tgt && (S.tailCd -= dt) <= 0) {
+      HB.copy(tgt.pos).sub(e.pos); const d = HB.length();
+      if (d < 900 && HB.dot(S.dir) < -0.2*d) { if (S.burst <= 0) S.burst = 1.2; }
+      if (S.burst > 0) { S.burst -= dt; S.burstCd -= dt;
+        if (S.burstCd <= 0) { S.burstCd = 0.09; HB2.set(0, 1.2*3, -2*3).applyQuaternion(m.quaternion).add(e.pos); shoot(game, e, HB2.clone(), tgt, 760, 9, {err:14, color:0xff8a5a, len:4, w:0.5}); G.audio.shot(e.pos, 'mg'); }
+        if (S.burst <= 0) S.tailCd = 2.5; }
+      if (U.turret) { HB.copy(tgt.pos); U.turret.parent.worldToLocal(HB); U.turret.rotation.y = Math.atan2(HB.x, HB.z) + Math.PI; }
+    }
+    if (fire && tgt && (S.misCd -= dt) <= 0 && e.pos.distanceTo(tgt.pos) < 2200) {
+      S.misCd = 11;
+      for (let k = 0; k < 2; k++) game.later(k*0.3, () => { if (!e.alive) return; game.launchMissile(F.world(k ? 'wingL' : 'wingR', (k ? 1 : -1)*3, 0, 0), S.dir.clone(), tgt, {team:'enemy', speed:150, max:330, turn:1.9, dmg:90*e.dmgMul, life:11}); G.audio.missile(); });
+    }
+  } else {
+    // hover and mech: face the target
+    if (tgt) { let dy = Math.atan2(tgt.pos.x - e.pos.x, tgt.pos.z - e.pos.z) - e.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); e.yaw += Math.max(-dt*0.9, Math.min(dt*0.9, dy));
+      HB.copy(tgt.pos).sub(e.pos); HB.y -= e.fm === 'mech' ? 27 : 0; ctl.aimPitch = Math.max(-1.0, Math.min(1.2, Math.atan2(HB.y, Math.hypot(HB.x, HB.z)))); ctl.aimYaw = 0; ctl.ready = 1.5; ctl.wpn = 0; }
+    if (e.fm === 'hover') {
+      let gx, gz, ga, sp = 45;
+      if (S.st === 'descend') {   // look for a landing spot near the waypoint, fly there, then come down
+        if (!S.lz) S.lz = G.harbLandSpot(W, e.pos, C);
+        gx = S.lz.x; gz = S.lz.z; ga = Math.hypot(gx - e.pos.x, gz - e.pos.z) < 40 ? gh(gx, gz) + 3*G.CLEAR.mech : gh(gx, gz) + 110; sp = 70;
+        if (Math.hypot(gx - e.pos.x, gz - e.pos.z) < 40 && e.pos.y < gh(gx, gz) + 3*G.CLEAR.mech + 4) S.landed = true;
+      } else {
+        S.orb += dt*0.12; const T = tgt ? tgt.pos : C; gx = T.x + Math.sin(S.orb)*420; gz = T.z + Math.cos(S.orb)*420; ga = Math.max(gh(gx, gz), gh(e.pos.x, e.pos.z)) + 110;
+      }
+      HB.set(gx - e.pos.x, ga - e.pos.y, gz - e.pos.z); const d = HB.length(); if (d > 1) e.pos.addScaledVector(HB, Math.min(d, sp*dt)/d);
+      m.rotation.set(0.05, e.yaw, Math.sin(e.t*0.8)*0.03); ctl.thrust = 0.7;
+      if (fire && tgt && S.tf <= 0 && S.st !== 'descend') {
+        const vis = game.sees(e, tgt);
+        if (S.burst > 0) { S.burst -= dt; S.burstCd -= dt; if (vis && S.burstCd <= 0) { S.burstCd = 0.1; shoot(game, e, F.world('gunpod', 0, 0.05, 3.9), tgt, 780, 17, {err:10, color:0xffa060, len:6, w:0.9}); G.audio.shot(e.pos, 'shell'); } }
+        else if ((S.gunCd -= dt) <= 0 && vis) { S.burst = 1.4; S.gunCd = 3.4; }
+        if ((S.misCd -= dt) <= 0) { S.misCd = 9.5; G.hud.flash('MISSILE SALVO');
+          for (let k = 0; k < 6; k++) game.later(k*0.18, () => { if (!e.alive) return; const sd = k % 2 ? 1 : -1; game.launchMissile(F.world(sd > 0 ? 'wingL' : 'wingR', sd*(2 + k*0.4), 0.6, -1), HB2.set(sd*0.4, 1, 0).normalize().clone(), tgt, {team:'enemy', speed:140, max:320, turn:1.8, dmg:70*e.dmgMul, life:11}); G.audio.missile(); });
+        }
+      }
+    } else {
+      // mech: walk toward the target over solid ground
+      const d = tgt ? Math.hypot(tgt.pos.x - e.pos.x, tgt.pos.z - e.pos.z) : 0;
+      if (tgt && S.stomp <= 0 && d > 200) { const vx = Math.sin(e.yaw), vz = Math.cos(e.yaw), nx = e.pos.x + vx*13*dt, nz = e.pos.z + vz*13*dt;
+        if (W.height(nx, nz) > 0.5) { e.pos.x = nx; e.pos.z = nz; S.walk += dt*2.2; ctl.walkAmt = 1; } }
+      ctl.walk = S.walk; e.pos.y = gh(e.pos.x, e.pos.z) + 3*G.CLEAR.mech; m.rotation.set(0, e.yaw, 0); ctl.thrust = 0.12;
+      const grounded = P.alive && P.mode !== 'jet' && P.pos.y - gh(P.pos.x, P.pos.z) < 30, pd = Math.hypot(P.pos.x - e.pos.x, P.pos.z - e.pos.z);
+      if (S.stomp > 0) { S.stomp -= dt;
+        if (S.stomp <= 0) { S.stompCd = 6; G.audio.boom(e.pos, 2); P.shake += 2;
+          for (let i = 0; i < 14; i++) { const a = i/14*6.283; game.fx.dust(HB.set(e.pos.x + Math.sin(a)*70, gh(e.pos.x, e.pos.z), e.pos.z + Math.cos(a)*70)); }
+          if (P.alive && P.mode !== 'jet' && P.pos.y - gh(P.pos.x, P.pos.z) < 30 && pd < 130) P.damage(160*(1 - pd/150)*e.dmgMul, e.pos.clone(), 'impact');
+          const Wg = game.wing, wd = Math.hypot(Wg.pos.x - e.pos.x, Wg.pos.z - e.pos.z); if (Wg.alive && Wg.mode !== 'jet' && Wg.pos.y - gh(Wg.pos.x, Wg.pos.z) < 30 && wd < 130) Wg.hit(160*(1 - wd/150)*e.dmgMul); } }
+      else if (fire && (grounded && pd < 110 || (game.wing.alive && game.wing.mode !== 'jet' && game.wing.pos.y - gh(game.wing.pos.x, game.wing.pos.z) < 30 && Math.hypot(game.wing.pos.x - e.pos.x, game.wing.pos.z - e.pos.z) < 110)) && (S.stompCd -= dt) <= 0) { S.stomp = 1.0; G.hud.flash('STOMP · GET CLEAR'); G.audio.tone(90, 0.9, 'sawtooth', 0.07, 60); }
+      if (fire && tgt && S.tf <= 0 && S.stomp <= 0) {
+        if ((S.gunCd -= dt) <= 0 && game.sees(e, tgt)) { S.gunCd = 2.3; shoot(game, e, F.world('gunpod', 0, 0.05, 3.9), tgt, 520, 55, {err:9, color:0xffb070, len:7, w:1.1, splash:12}); G.audio.shot(e.pos, 'shell'); }
+        if ((S.misCd -= dt) <= 0) { S.misCd = 11;
+          for (let k = 0; k < 4; k++) game.later(k*0.2, () => { if (!e.alive) return; game.launchMissile(F.world(k % 2 ? 'wingL' : 'wingR', (k % 2 ? 1 : -1)*2.5, 0.6, 0), HB2.set(0, 1, 0).clone(), tgt, {team:'enemy', speed:140, max:320, turn:1.8, dmg:80*e.dmgMul, life:11}); G.audio.missile(); });
+        }
+      }
+    }
+  }
+  m.position.copy(e.pos); F.update(dt); U.sync(dt); m.updateMatrixWorld(true);   // muzzles and launchers read world matrices this frame
+  // its bulk is solid: push the player out of the hit sphere
+  if (P.alive) { HB.copy(P.pos).sub(HB2.copy(e.pos).setY(e.pos.y + e.cy)); const d = HB.length(), R = e.r + 4;
+    if (d < R && d > 0.01) { P.pos.addScaledVector(HB, (R - d)/d); if (game.time - (S.bumpT || -99) > 1) { S.bumpT = game.time; P.damage(30, e.pos.clone(), 'impact'); P.shake += 0.4; } } }
+};
+G.harbLandSpot = (W, from, C) => {
+  let best = null, bd = 1e9;
+  for (let i = 0; i < 160; i++) { const a = Math.random()*6.283, r = 100 + Math.random()*1800, x = C.x + Math.sin(a)*r, z = C.z + Math.cos(a)*r;
+    if (W.height(x, z) > 6 && W.slope(x, z) < 0.3) { const d = Math.hypot(x - from.x, z - from.z); if (d < bd) { bd = d; best = {x, z}; } } }
+  return best || {x:from.x, z:from.z};
 };
 function shootFrom(game, e, from, tgt, speed, dmg, o){ shoot(game, e, from, tgt, speed, dmg, o); }
 
@@ -409,6 +533,7 @@ G.updateEnemy = function(game, e, dt){
   switch (e.type) {
     case 'colossus': { G.updateSovereign(game, e, dt); break; }
     case 'skycarrier': { G.updateSkyCarrier(game, e, dt); break; }
+    case 'harbinger': { G.updateHarbinger(game, e, dt); break; }
     case 'skyflak': case 'skymis': case 'skyengine': { G.updateSkyPart(game, e, dt); break; }
     case 'tank': case 'apc': case 'aa': case 'sam': {
       const spd = e.type === 'apc' ? 11 : 8;

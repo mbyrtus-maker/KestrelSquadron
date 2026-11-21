@@ -4,7 +4,7 @@ const G = window.G, V3 = THREE.Vector3, $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]));
 
 /* ---------- Input ---------- */
-const I = G.input = {keys:new Set(), pressed:new Set(), mx:0, my:0, lmb:false, rmb:false};
+const I = G.input = {keys:new Set(), pressed:new Set(), mx:0, my:0, lmb:false, rmb:false, an:{}, look:null, pad:false};
 const GAME_KEYS = ['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyF', 'KeyQ', 'KeyR', 'KeyV', 'KeyC', 'KeyG', 'KeyB', 'KeyX', 'KeyZ', 'KeyT', 'KeyJ', 'KeyE', 'KeyH', 'KeyN', 'KeyM'];
 addEventListener('keydown', e => {
   if (e.code === 'KeyD' && e.ctrlKey && e.altKey) { e.preventDefault(); if (!e.repeat) showCheats(); return; }
@@ -46,6 +46,59 @@ const view = $('view');
 view.addEventListener('mousedown', e => { if (state !== 'mission') return; G.audio.init(); if (!paused && !lockEl()) grabMouse(); if (e.button === 0) { I.lmb = true; I.pressed.add('Mouse0'); } if (e.button === 2) I.rmb = true; if (e.button === 1) { e.preventDefault(); I.pressed.add('Mouse1'); } });
 addEventListener('mouseup', e => { if (e.button === 0) I.lmb = false; if (e.button === 2) I.rmb = false; });
 addEventListener('contextmenu', e => { if (state === 'mission') e.preventDefault(); });
+
+
+/* ---------- Game controller (standard-layout gamepads: Xbox, PlayStation, Switch Pro and most others) ----------
+   In a sortie:  left stick  jet: fly (bank and pull) · hover/mech: move        right stick  jet: throttle (up/down) and rudder · hover/mech: look and aim
+                 RT guns · LT missiles (mech: shield) · RB afterburner/boost · LB flares · A rise/jump · B descend · X head lasers (mech: missile racks)
+                 Y next mode · LS click blade · RS click designate target · D-pad up camera, down missile type, left wingman attack, right wingman cover
+                 Back return to base · Start pause.
+   In the hangar and menus: D-pad or left stick moves between buttons, A presses, B closes a window, Start opens the briefing or resumes. */
+const PADMAP = {7:'Mouse0', 4:'KeyF', 5:'ShiftLeft', 0:'Space', 1:'KeyC', 2:'KeyE', 3:'Tab', 10:'KeyQ', 11:'KeyT', 12:'KeyV', 13:'KeyH', 14:'KeyZ', 15:'KeyX', 8:'KeyR'};
+const padPrev = [], PDZ = 0.16, pdz = v => Math.abs(v) < PDZ ? 0 : (v - Math.sign(v)*PDZ)/(1 - PDZ);
+let padSteer = false, padNavT = 0;
+addEventListener('gamepadconnected', e => { G.hud && G.hud.flash && state === 'mission' && G.hud.flash('CONTROLLER CONNECTED'); I.pad = true; const t = document.getElementById('padNote'); if (t) t.hidden = false; });
+function padFocus(dir){   // menus: step through the visible buttons in reading order
+  const ov = document.getElementById('overlay'), mn = document.getElementById('menu'), root = !ov.hidden ? ov : !mn.hidden ? mn : document.getElementById('hangar');
+  if (!root) return; const B = [...root.querySelectorAll('button, [data-tab], input')].filter(b => b.offsetParent !== null && !b.disabled); if (!B.length) return;
+  const i = B.indexOf(document.activeElement); const n = B[(i < 0 ? 0 : i + dir + B.length) % B.length]; n.focus(); n.scrollIntoView && n.scrollIntoView({block:'nearest'});
+}
+function pollPad(dt){
+  const list = navigator.getGamepads ? navigator.getGamepads() : []; let gp = null; for (const p of list) if (p && p.connected) { gp = p; break; }
+  if (!gp) { if (I.pad && padSteer) { I.mx = I.my = 0; padSteer = false; } I.look = null; return; }
+  I.pad = true;
+  const bt = i => !!(gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > 0.4)), down = i => bt(i) && !padPrev[i];
+  const lx = pdz(gp.axes[0] || 0), ly = pdz(gp.axes[1] || 0), rx = pdz(gp.axes[2] || 0), ry = pdz(gp.axes[3] || 0);
+  const ov = !document.getElementById('overlay').hidden;
+  if (state === 'mission' && G.game && !G.game.over && !paused && !ov) {
+    const P = G.game.player, jet = P && P.mode === 'jet';
+    for (const k in PADMAP) { const c = PADMAP[k], b = bt(+k);
+      if (c === 'Mouse0') { if (b) I.lmb = true; else if (padPrev[k]) I.lmb = false; }
+      if (b && !padPrev[k]) I.pressed.add(c);
+      if (b) I.keys.add(c); else if (padPrev[k]) I.keys.delete(c); }
+    { const lt = bt(6); if (lt) I.rmb = true; else if (padPrev[6]) I.rmb = false; }
+    const an = I.an = {};
+    if (jet) {
+      if (lx || ly) { I.mx = lx; I.my = ly; padSteer = true; } else if (padSteer) { I.mx = I.my = 0; padSteer = false; }   // stick back pulls the nose up
+      if (ry < 0) an.KeyW = -ry; if (ry > 0) an.KeyS = ry; if (rx > 0) an.ArrowRight = rx*0.8; if (rx < 0) an.ArrowLeft = -rx*0.8;
+      I.look = null;
+    } else {
+      if (ly < 0) an.KeyW = -ly; if (ly > 0) an.KeyS = ly; if (lx > 0) an.KeyD = lx; if (lx < 0) an.KeyA = -lx;
+      I.look = rx || ry ? {x:rx, y:ry} : null; if (padSteer) { I.mx = I.my = 0; padSteer = false; }
+    }
+    if (down(9)) togglePause();
+  } else {
+    I.an = {}; I.look = null;
+    if (I.lmb && padPrev[7]) I.lmb = false; if (I.rmb && padPrev[6]) I.rmb = false;
+    padNavT -= dt; const nav = down(12) || down(14) ? -1 : down(13) || down(15) ? 1 : 0, st = Math.abs(ly) > 0.5 || Math.abs(lx) > 0.5 ? Math.sign(ly || lx) : 0;
+    if (nav) { padFocus(nav); padNavT = 0.3; } else if (st && padNavT <= 0) { padFocus(st); padNavT = 0.22; }
+    if (down(0)) { const a = document.activeElement; if (a && a.click && a !== document.body) a.click(); else padFocus(1); }
+    if (down(1) && ov) { const c = document.querySelector('#overlay [data-act=close], #overlay [data-act=resume]'); if (c) c.click(); }
+    if (down(9)) { if (state === 'mission' && paused) togglePause(); else { const b = ov ? document.querySelector('#overlay [data-act=slaunch], #overlay [data-act=resume]') : document.querySelector('[data-brief]'); if (b) b.click(); } }
+  }
+  for (let i = 0; i < gp.buttons.length; i++) padPrev[i] = bt(i);
+}
+G.pollPad = pollPad;
 
 /* ---------- Renderer ---------- */
 const renderer = new THREE.WebGLRenderer({canvas:view, antialias:true, powerPreference:'high-performance', logarithmicDepthBuffer:true});
@@ -102,7 +155,8 @@ const bar = (v, lbl) => `<div class="fbar"><span>${lbl}</span><i><i style="width
 const GRADE = {perfect:'Perfect', success:'Success', fail:'Failure'};
 const WSTAT = {active:'Available', captured:'Captured', kia:'Killed in action', locked:'Not yet in the squadron'};
 function arkQuip(st){
-  if (st.ending) return G.ENDINGS[st.ending].vol === 2 ? 'Two wars, two medals, one very tired operations officer.' : 'The war is over. Don’t get comfortable. I certainly won’t let you.';
+  if (st.ending) { const v = G.ENDINGS[st.ending].vol; return v === 3 ? 'Three wars. I am going to sleep for a month. Don’t call me.' : v === 2 ? 'Two wars, two medals, one very tired operations officer.' : 'The war is over. Don’t get comfortable. I certainly won’t let you.'; }
+  if (st.node === 'v3n1') return 'A year of quiet. I knew it couldn’t last. Sit. Read.';
   if (st.node === 'v2n1') return 'Six months of peace. I was starting to like it. Sit down, something has come up.';
   if (!st.log.length) return 'You’re late. The briefing is on the table. Read it before you ask me questions I’ve already answered.';
   const last = st.log[st.log.length - 1].grade;
@@ -122,9 +176,10 @@ function storyPanel(){
   h += `<div class="ark-head">${G.portrait(st.ending ? G.ENDINGS[st.ending].mood : 'stern', 'sm')}<div><small>${esc(G.OFFICER.role)}</small><b>${esc(G.OFFICER.name)}</b><p>“${esc(arkQuip(st))}”</p></div></div>`;
   if (st.ending) {
     const E = G.ENDINGS[st.ending];
-    h += `<article class="sortie story"><div class="s-top"><span class="s-tag">${E.vol === 2 ? 'Volume 2 complete' : 'Volume 1 complete'}</span><span class="threat">${esc(E.grade)}</span></div><h3>${esc(E.title)}</h3>
-      ${E.text(st).map(t => `<p class="s-brief">${esc(t)}</p>`).join('')}<div class="s-foot"><button class="ghost" data-story="reset">Replay from Volume 1</button><button class="launch" data-story="vol2">${E.vol === 2 ? 'Replay Volume 2' : 'Begin Volume 2 · Ascendant'}</button></div></article>`;
-    if (E.vol !== 2) h += `<p class="panel-note">Volume 2 · Ascendant: five new missions. Six months after the armistice, something enormous crosses Cinder Reach. Your wingmen and story choices carry over.</p>`;
+    h += `<article class="sortie story"><div class="s-top"><span class="s-tag">Volume ${E.vol || 1} complete</span><span class="threat">${esc(E.grade)}</span></div><h3>${esc(E.title)}</h3>
+      ${E.text(st).map(t => `<p class="s-brief">${esc(t)}</p>`).join('')}<div class="s-foot" style="flex-wrap:wrap;gap:8px"><button class="ghost" data-story="reset">Replay from Volume 1</button>${(E.vol || 1) >= 2 ? `<button class="ghost" data-story="vol" data-v="2">Replay Volume 2</button>` : ''}${(E.vol || 1) >= 3 ? `<button class="launch" data-story="vol" data-v="3">Replay Volume 3</button>` : `<button class="launch" data-story="vol" data-v="${(E.vol || 1) + 1}">Begin Volume ${(E.vol || 1) + 1} · ${(E.vol || 1) === 1 ? 'Ascendant' : 'Harbinger'}</button>`}</div></article>`;
+    if (!E.vol) h += `<p class="panel-note">Volume 2 · Ascendant: five new missions. Six months after the armistice, something enormous crosses Cinder Reach. Your wingmen and story choices carry over.</p>`;
+    if (E.vol === 2) h += `<p class="panel-note">Volume 3 · Harbinger: five new missions. The Varn have rebuilt a salvaged Kestrel three times over, as a bomber that stands up and walks.</p>`;
   } else {
     const m = G.storyMission(st.node), node = G.STORY[st.node];
     h += `<article class="sortie story"><div class="s-top"><span class="s-tag">${esc(node.chapter)}</span><span class="threat">Mission ${G.storyStep()}</span></div>
@@ -152,9 +207,9 @@ function showBriefing(){
 }
 function showEnding(key){
   const E = G.ENDINGS[key], st = G.save.story;
-  overlay(`<div class="br-grid"><div class="br-por">${G.portrait(E.mood)}<p class="br-name">${esc(G.OFFICER.name)}</p></div><div class="br-text"><small class="br-ch">${E.vol === 2 ? 'Volume 2' : 'Volume 1'} complete · ${esc(E.grade)}</small><h2>${esc(E.title)}</h2>
+  overlay(`<div class="br-grid"><div class="br-por">${G.portrait(E.mood)}<p class="br-name">${esc(G.OFFICER.name)}</p></div><div class="br-text"><small class="br-ch">Volume ${E.vol || 1} complete · ${esc(E.grade)}</small><h2>${esc(E.title)}</h2>
     ${E.text(st).map(t => `<p>${esc(t)}</p>`).join('')}<h4 class="ph">Your war</h4><ol class="slog">${st.log.map(l => `<li><span>${esc(l.title)}</span><b class="grade g-${l.grade}">${GRADE[l.grade]}</b></li>`).join('')}</ol>
-    ${E.vol !== 2 ? '<p>Volume 2 · Ascendant is now open in the Story tab.</p>' : ''}<div class="ov-actions"><button data-act="close">Back to the hangar</button></div></div></div>`, 'wide brief');
+    ${(E.vol || 1) < 3 ? `<p>Volume ${(E.vol || 1) + 1} · ${(E.vol || 1) === 1 ? 'Ascendant' : 'Harbinger'} is now open in the Story tab.</p>` : ''}<div class="ov-actions"><button data-act="close">Back to the hangar</button></div></div></div>`, 'wide brief');
 }
 
 function renderPanel(){
@@ -264,7 +319,7 @@ document.addEventListener('click', e => {
   if (b.dataset.sel) { previewId = null; s.frame = b.dataset.sel; s.damage = 0; G.persist(); buildHangarFighter(); refreshHangar(); return; }
   if (b.dataset.brief) { showBriefing(); return; }
   if (b.dataset.wing) { s.story.wing = b.dataset.wing; G.persist(); if (b.dataset.inbrief) showBriefing(); else renderPanel(); return; }
-  if (b.dataset.story === 'vol2') { G.storyVol2(); renderPanel(); showBriefing(); return; }
+  if (b.dataset.story === 'vol') { G.storyVol(+b.dataset.v); renderPanel(); showBriefing(); return; }
   if (b.dataset.story === 'reset') { overlay(`<h2>Replay the campaign?</h2><p>The war starts over from Chapter 1. Your pilot level, money, frames and upgrades all stay.</p><div class="ov-actions"><button class="ghost" data-act="close">Cancel</button><button data-act="sreset">Replay from Chapter 1</button></div>`, 'slim'); return; }
   if (b.dataset.train) { tryLaunch(G.trainingMission()); return; }
   if (b.dataset.launch) { const m = s.board.find(x => x.id === b.dataset.launch); if (m) tryLaunch(m); return; }
@@ -387,6 +442,16 @@ const MANUAL = `
       <dt><kbd>X</kbd></dt><dd>Cover me. Engages threats near you.</dd>
       <dt><kbd>G</kbd></dt><dd>Ping the map where you are aiming. Your wingman moves there and engages.</dd>
       <dt><kbd>B</kbd></dt><dd>Form up on me.</dd></dl></section>
+    <section><h3>Controller</h3><dl>
+      <dt>Left stick</dt><dd>Jet: fly (pull back to climb). Hover and mech: move.</dd>
+      <dt>Right stick</dt><dd>Jet: throttle (up/down) and rudder. Hover and mech: look and aim.</dd>
+      <dt>RT / LT</dt><dd>Guns / missiles (mech: shield).</dd>
+      <dt>RB / LB</dt><dd>Boost / flares.</dd>
+      <dt>A / B</dt><dd>Rise or jump / descend.</dd>
+      <dt>X / Y</dt><dd>Head lasers (mech: missile racks) / next mode.</dd>
+      <dt>Stick clicks</dt><dd>Left: draw the blade. Right: designate target.</dd>
+      <dt>D-pad</dt><dd>Up: camera. Down: missile type. Left: wingman attack. Right: wingman cover.</dd>
+      <dt>Back / Start</dt><dd>Return to base / pause. In menus, the D-pad moves, A presses, B closes.</dd></dl></section>
   </div>
   <label class="chk"><input type="checkbox" id="optInvert" ${G.save.invert ? 'checked' : ''}> Invert pitch (mouse up = nose down)</label>
   <p class="muted">Enemy mechs, fighters and tanks: CC0 models by Quaternius and pixelmannen, recoloured for this game.</p>`;
@@ -424,7 +489,7 @@ function togglePause(){
     overlay(`<h2>Paused</h2><p class="muted">${esc(G.game.m.title)} · ${esc(G.game.m.place)}</p>
       <div class="ov-actions col"><button data-act="resume">Resume</button><button data-act="manual" class="ghost">Flight manual</button>
       ${G.game.complete && !G.game.holdRTB() ? '<button data-act="rtb" class="ghost">Return to base</button>' : ''}<button data-act="abort" class="danger">Abort sortie</button><button data-act="quit" class="ghost">Quit to main menu</button></div>
-      <p class="muted">Quitting abandons this sortie with no rewards.</p>${volRow('pVol')}${sensRow()}${gfxRow()}`, 'slim');
+      <p class="muted">Quitting abandons this sortie with no rewards.${G.coop.live(G.game) ? ' <b>Co-op: the sortie keeps running while this menu is open.</b>' : ''}</p>${volRow('pVol')}${sensRow()}${gfxRow()}`, 'slim');
   } else { closeOverlay(); grabMouse(); }
 }
 function act(a){
@@ -510,10 +575,11 @@ function toHangar(){
 let last = performance.now();
 function loop(t){
   const dt = Math.min(0.05, (t - last)/1000); last = t;
+  try { pollPad(dt); } catch (err) {}
   try {
     if (state === 'hangar' || state === 'menu') { updateHangar(dt, t/1000); renderer.render(Hg.scene, hcam); }
     else if (state === 'mission' && G.game) {
-      if (!paused) G.game.update(dt);
+      if (!paused || G.coop.live(G.game)) G.game.update(dt);   // co-op: one pilot's pause menu doesn't stop the sky for the other
       if (G.game && !G.game.over) { G.hud.update(G.game, paused ? 0 : dt); G.audio.loops(G.game, paused); }
       if (G.game && G.game.scene) G.game.render();
     } else if (state === 'debrief' && G.game && G.game.scene) { G.game.fx.update(dt); G.game.render(); }

@@ -234,8 +234,8 @@ G.Game = class {
   }
   damageEnt(e, amt, by, info){
     if (!e.alive) return;
-    if (e.armored) {   // the Ascendant's reactor: sealed behind its petals until the engines are gone
-      e.hitT = 0.12; if (by === 'player' && this.time - (this.armTip || -99) > 12) { this.armTip = this.time; G.hud.flash('REACTOR SEALED · DESTROY THE SIX ENGINES'); G.audio.impact('metal', 0.6); }
+    if (e.armored) {   // the Ascendant's reactor: sealed behind its petals until the engines are gone (and the Harbinger while it transforms)
+      e.hitT = 0.12; if (by === 'player' && e.type !== 'harbinger' && this.time - (this.armTip || -99) > 12) { this.armTip = this.time; G.hud.flash('REACTOR SEALED · DESTROY THE SIX ENGINES'); G.audio.impact('metal', 0.6); }
       return;
     }
     // Heavy buildings shrug off everything but bombs: other weapons can't take them below 40%.
@@ -249,6 +249,8 @@ G.Game = class {
       else if (info && info.bomb) amt *= 1.3;
     }
     if (e.heavy && !(info && (info.bomb || info.melee))) { amt *= 0.25; amt = Math.min(amt, Math.max(0, e.hp - e.maxHp*0.4)); if (amt <= 0) { e.hitT = 0.12; return; } }
+    if (e.hpFloor) amt = Math.min(amt, Math.max(0, e.hp - e.hpFloor));   // the Harbinger can't be knocked past a phase until it transforms
+    if (e.type === 'harbinger' && e.cls === 'mech' && info && (info.melee || info.bomb)) amt *= info.melee ? 1.5 : 1.3;
     e.hp -= amt; e.hitT = 0.12;
     if (e.retreatAt && e.hp > 0 && e.hp < e.maxHp*e.retreatAt) { if (by === 'player') G.hud.hitMark(false, e); G.hollowRetreat(this, e, true); return; }
     if (by === 'player') G.hud.hitMark(e.hp <= 0, e);
@@ -264,6 +266,14 @@ G.Game = class {
       if (e.type === 'skyengine' && e.carrier && e.carrier.alive) { const n = e.carrier.parts.filter(p => p.type === 'skyengine' && p.alive).length; G.hud.flash(n ? `ENGINE DOWN · ${n} LEFT` : 'LAST ENGINE DOWN'); } }
     else if (e.type === 'skycarrier') { e.falling = true; this.skyFall = {e, t:0, boomT:0}; for (const p of e.parts || []) if (p.alive) { p.alive = false; p.mesh.traverse(o => { if (o.isMesh) o.material = CHAR(); }); }
       G.hud.flash('THE ASCENDANT IS GOING DOWN'); this.player.shake += 2; }
+    else if (e.type === 'harbinger') {   // it falls where it stands, burning, in a chain of blasts
+G.hud.flash('THE HARBINGER IS DOWN');       e.mesh.traverse(o => { if (o.isMesh) o.material = CHAR(); }); this.fx.burner(c, 200);
+      const gy = Math.max(this.world.height(e.pos.x, e.pos.z), 0), m = e.mesh, x0 = m.rotation.x;
+      for (let i = 0; i <= 30; i++) this.later(i*0.06, () => { const k = i/30; m.rotation.x = x0 - k*k*1.4; m.position.y = e.pos.y + (gy + 8 - e.pos.y)*k*k; });
+      for (let i = 1; i <= 7; i++) this.later(i*0.3, () => { const p = e.pos.clone(); p.x += (Math.random() - 0.5)*40; p.z += (Math.random() - 0.5)*40; p.y = gy + 6 + Math.random()*30; this.fx.explosion(p, 1.4 + Math.random()); G.audio.boom(p, 1.3); this.player.shake += 0.6; });
+      this.later(2.4, () => { const p = e.pos.clone(); p.y = gy + 12; this.fx.explosion(p, 3.4); G.audio.boom(p, 2.2); this.player.shake += 2.2; });
+      this.later(4, () => G.hud.radio(G.OFFICER ? G.OFFICER.short : 'Bastion', 'The Harbinger is down. Kestrel... the Varn high command just asked for terms.'));
+    }
     else if (e.cls === 'air') this.scene.remove(e.mesh);
     else if (e.mesh.userData.mixer) {
       // Animated walker: play its death, then darken the hull where it fell.

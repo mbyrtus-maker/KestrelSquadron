@@ -486,6 +486,76 @@ G.buildEnemy = function(type, o = {}){
       flak:[[-19, 15, 80], [19, 15, 56], [-19, 15, -44], [19, 15, -86], [-76, 5, 64], [76, 5, 64], [-78, 5, -84], [78, 5, -84]],
       mis:[[0, 15, 90], [0, 15, -70]],
       eng:[[-60, 0.5, 48], [60, 0.5, 48], [-76, 0.5, -10], [76, 0.5, -10], [-62, 0.5, -68], [62, 0.5, -68]]};
+  } else if (type === 'harbinger') {
+    // The Harbinger (volume 3 boss): a Varn heavy bomber built on a captured three-mode chassis, three times a Kestrel's size.
+    // It uses the Kestrel's transformation rig (jet, hover, mech) with a broad bomber wing, four underslung engines,
+    // a belly bomb bay, a dorsal gun turret, twin canted tails, a glazed bombardier chin and Varn red optics and exhaust.
+    const F = G.buildFighter({id:'harbinger', color:0x7f848c, trim:0x4e5170, lasers:4}), P = F.P;
+    F.setMissiles(0); g.add(F.root); F.root.scale.setScalar(3); u.F = F;
+    const hullM = new THREE.MeshStandardMaterial({color:0x7f848c, roughness:0.58, metalness:0.3}), slateM = new THREE.MeshStandardMaterial({color:0x4e5170, roughness:0.55, metalness:0.35});
+    const redM = new THREE.MeshStandardMaterial({color:0xb2322a, roughness:0.55, metalness:0.2}), darkM = new THREE.MeshStandardMaterial({color:0x2a2d33, roughness:0.6, metalness:0.5});
+    const exh = new THREE.MeshBasicMaterial({color:0xff7a3a}), glass = new THREE.MeshStandardMaterial({color:0x2a0b08, emissive:0xff3a1a, emissiveIntensity:0.5, roughness:0.1, metalness:0.4});
+    F.root.traverse(o => { if (!o.isMesh || !o.material) return; const mt = o.material;
+      if (mt.emissive && mt.emissive.getHex() === 0x2ab4e6) { o.material = mt.clone(); o.material.color.setHex(0xff8a7a); o.material.emissive.setHex(0xff2a1a); }   // red optics
+      else if (mt.isMeshBasicMaterial && mt.color.getHex() === 0xcff4ff) o.material = exh;
+      else if (mt.isMeshPhysicalMaterial) { o.material = mt.clone(); o.material.color.setHex(0x3a1410); } });   // smoked red canopy
+    F.glow.color.setHex(0xff8a3a);
+    const pod = (Gp, x, y, z, r, len, s, finOn) => {   // a big engine pod: body, squared intake, red ring, glowing nozzle, optional canted fin
+      Gp.add(M(cyl(r, r*1.08, len, 18), hullM, x, y, z)); Gp.add(M(rbox(r*2.1, r*1.3, r*1.1, r*0.3), slateM, x, y + r*0.05, z + len/2 + r*0.3));
+      Gp.add(M(rbox(r*1.5, r*0.7, 0.1, 0.03), m.rub, x, y + r*0.05, z + len/2 + r*0.88)); Gp.add(M(cyl(r*1.04, r*1.04, 0.16, 18), redM, x, y, z + len*0.12));
+      Gp.add(M(cyl(r*0.95, r*0.8, 0.5, 18), darkM, x, y, z - len/2 - 0.2)); Gp.add(M(new THREE.CircleGeometry(r*0.68, 16).rotateY(Math.PI), exh, x, y, z - len/2 - 0.46));
+      if (finOn) { const f = M(fin([[0, 0], [-1.1, 0], [-1.6, 1.2], [-0.95, 1.2]], 0.09, 0.02), slateM, x + s*r*0.4, y + r*0.7, z - len*0.15); f.rotation.y = -Math.PI/2; f.rotation.z = -s*0.32; Gp.add(f); }
+    };
+    for (const [n, s] of [['wingL', 1], ['wingR', -1]]) {
+      const W = P[n];
+      W.add(M(plate([[0, 4.3], [s*1.45, 2.5], [s*7.3, -2.05], [s*7.3, -2.6], [0, -2.0]], 0.1, 0.03), slateM, 0, -0.12, 0));   // slate underside
+      pod(W, s*1.25, 0.55, -0.2, 0.56, 3.8, s, false); pod(W, s*2.55, 0.48, -0.9, 0.5, 3.4, s, true);   // the engines cluster on top beside the spine
+      W.add(M(rbox(2.6, 0.3, 3.4, 0.12), hullM, s*1.9, 0.18, -0.6));                                    // fairing under the pods
+      const tf = M(fin([[0, 0], [-1.5, 0], [-2.0, 1.3], [-1.2, 1.3]], 0.1, 0.03), hullM, s*7.35, 0.05, -1.4); tf.rotation.y = -Math.PI/2; tf.rotation.z = -s*0.25; W.add(tf);   // upturned wingtip fin
+      W.add(M(rbox(0.22, 0.06, 2.2, 0.02), redM, s*6.0, 0.09, -1.6)); W.add(M(rbox(0.5, 0.05, 0.5, 0.02), redM, s*4.8, 0.09, -0.6));
+      for (const z of [0.6, -0.4, -1.4]) { const st = M(rbox(0.08, 0.05, 1.0, 0.01), slateM, s*(3.6 - z*0.9), 0.09, z); st.rotation.y = s*0.9; W.add(st); }   // panel lines
+    }
+    // nose: a blended chine on each side of the canopy, a glazed bombardier chin and red sensor lights
+    for (const s of [1, -1]) { const ch = M(plate([[0, 0.6], [s*0.9, -0.6], [s*0.9, -1.6], [0, -1.6]], 0.12, 0.03), hullM, s*0.75, -0.15, 2.6); P.nose.add(ch); P.nose.add(M(rbox(0.16, 0.16, 0.16, 0.04), redM, s*0.95, -0.1, 2.0)); }
+    { const ch = M(new THREE.SphereGeometry(1, 16, 10), glass, 0, -0.42, 2.9); ch.scale.set(0.32, 0.22, 0.7); P.nose.add(ch); }
+    // bomb bay doors, and a dorsal gun turret looking aft between the engine pods
+    for (const x of [-0.34, 0.34]) P.body.add(M(rbox(0.6, 0.07, 2.0, 0.02), slateM, x, -0.78, -0.3));
+    { const T = new THREE.Group(); T.position.set(0, 1.0, -0.9); P.body.add(T); u.turret = T;
+      T.add(M(new THREE.SphereGeometry(0.42, 14, 10, 0, Math.PI*2, 0, Math.PI/2), darkM));
+      for (const x of [-0.14, 0.14]) T.add(M(cyl(0.05, 0.05, 1.1, 8), darkM, x, 0.18, -0.6)); }
+    // mech details: rounded engine-pod pauldrons with a red band, a slim head crest, toe spikes and heel spurs, a long gun pod
+    for (const [n, s] of [['armL', 1], ['armR', -1]]) { const A = P[n];
+      A.add(M(cyl(0.78, 0.78, 1.7, 18), hullM, s*0.35, 0.15, 0.1)); A.add(M(cyl(0.8, 0.8, 0.2, 18), redM, s*0.35, 0.15, 0.3));
+      A.add(M(rbox(1.3, 0.5, 0.5, 0.12), slateM, s*0.35, 0.15, 1.0)); A.add(M(new THREE.CircleGeometry(0.5, 16).rotateY(Math.PI), exh, s*0.35, 0.15, -0.76)); }
+    { const cr = M(fin([[0, 0], [-0.7, 0], [-0.4, 0.9], [0.1, 0.9]], 0.05, 0.01), redM, 0, 0.55, 0.1); cr.rotation.y = -Math.PI/2; P.head.add(cr); }
+    for (const ft of F.feet) {
+      const t = M(new THREE.ConeGeometry(0.35, 1.3, 4), slateM, 0, -2.25, -5.85); t.rotation.z = Math.PI; t.scale.z = 0.5; ft.add(t);   // toe spike (foot-local -y is forward)
+      const h = M(new THREE.ConeGeometry(0.28, 1.0, 4), slateM, 0, 1.05, -5.85); h.scale.z = 0.5; ft.add(h);                            // heel spur
+    }
+    P.gunpod.scale.set(1.25, 1.25, 1.4);
+    // Jet form: a B-2-style flying wing. One blended shell with a straight swept leading edge, a W-shaped saw-tooth trailing edge,
+    // a low central hump with a slit windscreen, engines buried in the wing (dorsal intakes, slot exhausts) and no fins at all.
+    const B2 = new THREE.MeshStandardMaterial({color:0x6c7179, roughness:0.62, metalness:0.35}), B2d = new THREE.MeshStandardMaterial({color:0x50545b, roughness:0.7, metalness:0.3});
+    const SH = new THREE.Group(); F.root.add(SH); u.shell = SH; u.shellK = 1;
+    const outline = [[0, 4.3], [7.2, -0.4], [7.2, -1.0], [4.8, -1.6], [3.2, -2.9], [1.5, -1.6], [0, -2.7]];
+    const full = outline.concat(outline.slice(1, -1).reverse().map(([x, z]) => [-x, z]));
+    SH.add(M(plate(full, 0.32, 0.12), B2));
+    SH.add(M(plate(outline.slice(0, 3).concat([[0, -0.4]]).map(([x, z]) => [x*0.98, z]).concat([[-6.9, -1.0], [-7.05, -0.4]]), 0.05, 0.01), B2d, 0, -0.24, 0));   // darker belly panel
+    { const h = M(new THREE.SphereGeometry(1, 28, 14), B2, 0, 0.05, 0.6); h.scale.set(1.55, 0.52, 3.5); SH.add(h); }          // central hump (hides the folded fighter)
+    { const h = M(new THREE.SphereGeometry(1, 20, 10), B2d, 0, -0.05, 0.4); h.scale.set(1.45, 0.4, 3.1); SH.add(h); }
+    for (const s of [1, -1]) {
+      const w = M(rbox(0.55, 0.06, 0.28, 0.02), glass, s*0.34, 0.47, 2.6); w.rotation.x = -0.35; w.rotation.y = s*0.25; SH.add(w);   // slit windscreen panes
+      for (const x of [1.7, 2.6]) {                                                                                 // buried engines: dorsal intake humps
+        const hm = M(new THREE.SphereGeometry(1, 16, 8), B2, s*x, 0.18, 0.2 - x*0.25); hm.scale.set(0.5, 0.22, 1.6); SH.add(hm);
+        const ik = M(rbox(0.62, 0.16, 0.12, 0.04), m.rub, s*x, 0.33, 1.4 - x*0.25); ik.rotation.x = -0.25; SH.add(ik);
+        SH.add(M(rbox(0.7, 0.08, 0.3, 0.02), exh, s*x, 0.12, -1.55 - (x > 2 ? 0.55 : 0)));                         // slot exhaust on the upper trailing edge
+      }
+      SH.add(M(rbox(0.06, 0.03, 4.6, 0.01), redM, s*3.9, 0.23, -0.5)).rotation.y = s*0.98;                          // thin red Varn edge line
+    }
+    u.sync = dt => {   // the shell is whole in jet mode and folds away as the fighter parts unfold (and back again)
+      const want = F.mode === 'jet' ? 1 : 0; u.shellK += Math.sign(want - u.shellK)*Math.min(Math.abs(want - u.shellK), dt ? dt/0.6 : 1);
+      const k = u.shellK*u.shellK*(3 - 2*u.shellK); SH.visible = k > 0.02; SH.scale.set(Math.max(0.02, k), Math.max(0.02, 0.4 + 0.6*k), Math.max(0.02, k));
+    };
   } else if (type === 'skyflak') {
     // twin-barrel flak turret on a ring mount; u.head turns, u.muzzle is the gun tip
     g.add(M(vcyl(3.6, 4.2, 2.2, 12), m.dk)); const H = new THREE.Group(); H.position.y = 2.0; g.add(H); u.head = H;

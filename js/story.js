@@ -274,6 +274,71 @@ N.v2n5 = {vol:2, chapter:'Vol. 2 · Chapter 5 · Ascendant', title:'Ascendant', 
     success:{mood:'pleased', say:'The Ascendant is down. The sky is ours again. Come home, Kestrel.', next:'end:v2victory'},
     fail:{mood:'angry', say:'She got through. The Bastion is burning and the Ascendant is still up there. We are not done.', next:'end:v2lost'}
   }};
+/* ---------- Volume 3 · Harbinger ----------
+   The Varn rebuild a salvaged Kestrel chassis three times over: the Harbinger, a transforming heavy bomber. Flags shape the final fight. */
+N.v3n1 = {vol:3, chapter:'Vol. 3 · Chapter 1 · Salvage', title:'Salvage', place:'the Grey Narrows', tier:3, pay:4.6, seed:731905, wing:null,
+  tasks:[{kind:'air', n:5, place:'the Grey Narrows', at:{x:1900, z:-3400}}, {kind:'recon', n:3, place:'the Varn salvage camp'}, {kind:'armor', n:6, place:'the salvage road'}],
+  sides:[{key:'hull'}, {key:'wingman'}], mood:'stern',
+  brief:() => [`A year of peace, ${cs()}. I bought a plant. It died. I think it was a sign.`,
+    'Remember every Kestrel we lost over Grayhook? The Varn didn’t leave the wrecks in the sea. Salvage crews have been hauling them out of the Grey Narrows for months.',
+    'Clear their air cover, photograph the salvage camp, and stop the convoy taking the parts north. I want to know what they want with our airframes.'],
+  radio:{start:'Lantern to Kestrel. Welcome back. Try to look surprised when they shoot at you.', done:{0:'Air cover’s gone. Get the photos. Low and slow.', 1:'Photos are in. Kestrel... those are transformation joints. Kill that convoy.'}},
+  out:{
+    perfect:{mood:'pleased', say:'Every crate, every truck. And your photos show the plans: they’re building one of ours, three times bigger. They call it the Harbinger. Now I know how its joints work.', then:'Engineers find the Harbinger’s weak points in the salvaged plans.', flags:{v3intel:1}, next:'v3n2'},
+    success:{mood:'stern', say:'They’ve copied the Kestrel. Scaled it up. A bomber that stands up and walks. Lovely. Next stop: the foundry.', then:'The Harbinger is being assembled at a foundry on Ironhold Isle.', next:'v3n2'},
+    fail:{mood:'angry', say:'The parts got through. Whatever they are building, they just got a head start.', then:'The Ironhold foundry runs day and night.', flags:{harbEarly:1}, next:'v3n2'}
+  }};
+N.v3n2 = {vol:3, chapter:'Vol. 3 · Chapter 2 · The Foundry', title:'The Foundry', place:'Ironhold Isle', tier:3, pay:4.7, seed:286614, wing:null,
+  tasks:f => [{kind:'sam', n:f.harbEarly ? 5 : 4, place:'the Ironhold cliffs'}, {kind:'base', n:f.v3intel ? 5 : 6, place:'the foundry'}, {kind:'walkers', n:3, place:'the foundry gate'}],
+  sides:[{key:'aa'}, {key:'hull'}], mood:'stern',
+  brief:f => ['The Harbinger’s armour is poured at a foundry on Ironhold Isle. Every plate you melt there is a plate it won’t be wearing when you meet it.',
+    f.v3intel ? 'Thanks to your photographs we know which halls cast the armour. They’re marked.' : 'We don’t know which halls matter, so flatten all of them.',
+    'SAMs on the cliffs, then the foundry, then the walker guard at the gate.'],
+  radio:{start:'Lantern on station. Cliffs first. They’ve got a lot of SAMs for a factory.', done:{0:'Cliffs are clear. Hit the foundry.', 1:'The foundry is burning. Here come the walkers.'}},
+  out:{
+    perfect:{mood:'pleased', say:'Half its armour is a puddle on the foundry floor. It will fly thin-skinned, and it will know it.', then:'The Harbinger launches with patchwork armour.', flags:{foundryBurned:1}, next:'v3n3'},
+    success:{mood:'stern', say:'The foundry is down. The Harbinger is finished anyway. We’ll meet it soon.', then:'The Harbinger is declared operational.', next:'v3n3'},
+    fail:{mood:'angry', say:'The foundry survived, and it poured the last plates tonight. The Harbinger is complete. Fully armoured.', then:'The Harbinger launches early with full armour.', flags:{harbEarly:1}, next:'v3n3'}
+  }};
+N.v3n3 = {vol:3, chapter:'Vol. 3 · Chapter 3 · Firestorm', title:'Firestorm', place:'Port Teague', tier:3, pay:4.8, seed:448120, wing:null,
+  tasks:[{kind:'air', n:6, place:'Port Teague', at:{x:-2100, z:-2900}}, {kind:'city', n:6, place:'Port Teague'}, {kind:'rescue', n:2, place:'the harbour district', who:'Families in the shelters'}],
+  sides:[{key:'collat'}, {key:'hull'}], mood:'angry',
+  brief:() => ['The Harbinger’s first sortie. It flattened the rail yards outside Port Teague and flew home before we could scramble. Now its escort wing is back to finish the job, and Reavers are in the streets.',
+    'Break the air raid, clear the Reavers out of the city with your blade, then get the families out of the harbour shelters.',
+    'Port Teague has been through enough. Not one more building, Kestrel.'],
+  radio:{start:'Lantern to Kestrel. Port Teague is burning. Go.', done:{0:'Raid’s broken. Into the streets. Blades out.', 1:'Streets are clear. The shelters next. They’ve been down there since dawn.'}},
+  out:{
+    perfect:{mood:'pleased', say:'Not one building lost, every family out. The Harbinger’s escort wing lost half its pilots today. It will fly with fewer friends.', then:'The Harbinger’s escort wing is gutted.', flags:{escortsBroken:1}, next:'v3n4'},
+    success:{mood:'stern', say:'Port Teague holds. Scorched, but it holds.', then:'The Harbinger’s escorts regroup.', next:'v3n4'},
+    fail:{mood:'angry', say:'We lost the harbour district. The Varn are calling it a victory, and their escort pilots are drunk on it.', then:'The Harbinger’s escort wing grows.', flags:{cityLost:1}, next:'v3n4'}
+  }};
+N.v3n4 = {vol:3, chapter:'Vol. 3 · Chapter 4 · Lancer', title:'Lancer', place:'the Saltglass Flats', tier:3, pay:4.9, seed:902277, wing:null,
+  tasks:[{kind:'sam', n:4, place:'the Saltglass Flats'}, {kind:'walkers', n:3, place:'the Harbinger’s airfield'},
+    {kind:'rival', n:1, place:'the Flats', who:'Lancer', escorts:2, hpMul:6.5, hello:'Marshal Kadran flies the Harbinger, {cs}. I fly for the Marshal. You will not reach him.', lastWords:'Marshal... forgive me...'}],
+  sides:[{key:'hull'}, {key:'aa'}], mood:'stern',
+  brief:() => ['The Harbinger flies from a salt-flat airfield guarded by SAMs and walkers. Its pilot is Marshal Kadran, the man who planned the first invasion.',
+    'His bodyguard is an ace called Lancer. She has never lost a dogfight. Today is a good day to start.',
+    'Break the SAM line, kill the walkers on the airfield, and put Lancer in the salt.'],
+  radio:{start:'Lantern to Kestrel. The Flats are wide open. So are you. Stay low.', done:{0:'SAMs are down. The airfield is next.', 1:'Walkers are scrap. Red tails, Kestrel! Lancer is inbound.'}},
+  out:{
+    perfect:{mood:'pleased', say:'Lancer is down and the airfield is a crater. Kadran is on his own now. Tomorrow, we end it.', then:'Marshal Kadran’s bodyguard is gone.', flags:{lancerDown:1}, next:'v3n5'},
+    success:{mood:'stern', say:'Lancer is down. Get some sleep. That’s an order.', then:'The Harbinger readies for one last raid.', flags:{lancerDown:1}, next:'v3n5'},
+    fail:{mood:'angry', say:'Lancer got away. She’ll fly beside the Harbinger tomorrow. Plan for two.', then:'Lancer will fly escort for the Harbinger.', flags:{lancerAlive:1}, next:'v3n5'}
+  }};
+N.v3n5 = {vol:3, chapter:'Vol. 3 · Chapter 5 · Harbinger', title:'Harbinger', place:'the Halvorsen coast', tier:3, pay:5.0, seed:615003, wing:null,
+  tasks:f => [{kind:'air', n:f.cityLost ? 7 : f.escortsBroken ? 4 : 5, place:'the bomber screen', at:{x:900, z:-2800}},
+    {kind:'harbinger', n:1, place:'the Halvorsen hills', hpMul:f.foundryBurned ? 0.85 : f.harbEarly ? 1.15 : 1, dmg:f.v3intel ? 0.9 : 1, escorts:f.cityLost ? 4 : f.escortsBroken ? 1 : 2, lancer:!!f.lancerAlive}],
+  sides:[{key:'hull'}, {key:'wingman'}], mood:'stern',
+  brief:f => ['The Harbinger is airborne and heading for the Bastion’s home port. Marshal Kadran is at the controls.',
+    'It fights three ways. As a jet it bombs from altitude, so get on its tail but watch the dorsal gun. Hurt it and it stops in the air like you do, with a gun pod and missile salvos. Hurt it again and it lands and walks. When it is on its feet, stay off the ground near it: it stomps.',
+    f.foundryBurned ? 'Its armour is patchwork. It will break sooner than Kadran thinks.' : f.harbEarly ? 'It is fully armoured. This will take everything you have.' : 'Expect it to be tough.',
+    f.lancerAlive ? 'Lancer is flying escort. Deal with her when she shows.' : `${cs()}. Third war, last fight. Come home.`],
+  radio:{start:'Lantern to all flights. The Harbinger is inbound. Everybody up.', done:{0:'Screen is broken. There it is, Kestrel. Big as a cruiser and coming straight for you.'}},
+  out:{
+    perfect:{mood:'pleased', say:'It’s down, Kadran is in custody, and the Varn signed the treaty on the hood of a jeep. You can stop now. That’s an order, and I mean it this time.', next:'end:v3flawless'},
+    success:{mood:'pleased', say:'The Harbinger is in pieces on the Halvorsen hills. It’s over. It’s really over.', next:'end:v3victory'},
+    fail:{mood:'angry', say:'It reached the port. The docks are burning, but the Bastion got out. We are not done.', next:'end:v3lost'}
+  }};
 for (const id in N) N[id].id = id;
 
 G.ENDINGS = {
@@ -290,6 +355,12 @@ G.ENDINGS = {
     'The Republic lights the harbour at Port Meridian for three nights.', 'Arkwright: “Two wars. You can stop now. That’s a request, not an order.”']},
   v2lost:{title:'Under the Shadow', grade:'Defeat', mood:'angry', vol:2, text:() => ['The Ascendant reaches the Bastion and burns her flight deck. The fleet scatters south.',
     'For a season, the Varn carrier owns the sky over the archipelago.', 'Arkwright: “She can be killed. You showed me that. We go again.”']},
+  v3flawless:{title:'The Last Treaty', grade:'Flawless victory', mood:'pleased', vol:3, text:() => ['The Harbinger’s wreck lies on the Halvorsen hills. Marshal Kadran signs the Varn surrender himself.',
+    'The salvaged Kestrel parts inside it are brought home and buried with the pilots who flew them.', 'Arkwright retires from operations and is given command of the Bastion. Her first order is your promotion. Her second is a week of leave.']},
+  v3victory:{title:'Harbinger Fallen', grade:'Victory', mood:'pleased', vol:3, text:() => ['Without the Harbinger, the Varn have nothing left to throw at the Republic. The war ends for good.',
+    'The Bastion’s crew paints a third mark under your canopy.', 'Arkwright: “Three wars. Same pilot. I’m having it engraved on something.”']},
+  v3lost:{title:'Ashes on the Water', grade:'Defeat', mood:'angry', vol:3, text:() => ['The Harbinger burns the home port and turns north, untouched.',
+    'The Bastion slips out with the fleet and waits for another chance.', 'Arkwright: “It can be hurt. You hurt it. Next time, it falls.”']},
   retreat:{title:'The Southern Islands', grade:'Defeat', mood:'angry', text:() => ['The Bastion limps south with what is left of the fleet. The northern archipelago falls under Varn control.',
     'The war isn’t over. It just isn’t going your way.', 'Arkwright: “We regroup, we rearm, and we go back. You’re flying lead.”']}
 };
@@ -324,8 +395,12 @@ G.storyCommit = (id, grade) => {
 };
 G.storyReset = () => { G.save.story = G.newStory(); G.persist(); };
 /* Volume 2 starts from a finished Volume 1 (keeping its roster and flags) or replays from its own first chapter. */
-G.storyVol2 = () => { const st = G.save.story || (G.save.story = G.newStory()); st.node = 'v2n1'; st.ending = null; st.vol = 2; st.log = st.log.filter(l => !G.STORY[l.node] || !G.STORY[l.node].vol);
-  for (const k of ['v2intel', 'skyEarly', 'yardBurned', 'fuelSafe', 'convoyLost', 'corvidDown', 'corvidAlive']) delete st.flags[k]; G.persist(); };
+G.VOL_START = {2:'v2n1', 3:'v3n1'};
+G.VOL_FLAGS = {2:['v2intel', 'skyEarly', 'yardBurned', 'fuelSafe', 'convoyLost', 'corvidDown', 'corvidAlive'], 3:['v3intel', 'harbEarly', 'foundryBurned', 'escortsBroken', 'cityLost', 'lancerDown', 'lancerAlive']};
+G.storyVol = n => { const st = G.save.story || (G.save.story = G.newStory()); st.node = G.VOL_START[n]; st.ending = null; st.vol = n;
+  st.log = st.log.filter(l => { const v = G.STORY[l.node] && G.STORY[l.node].vol; return !v || v < n; });
+  for (const k of G.VOL_FLAGS[n]) delete st.flags[k]; G.persist(); };
+G.storyVol2 = () => G.storyVol(2);
 G.storyStep = () => { const st = G.save.story; return st.log.length + 1; };
 
 /* ---------- In-mission scripting ---------- */
@@ -385,6 +460,18 @@ G.spawnSkyCarrier = (game, o = {}) => {
   U.mounts.mis.forEach(m => add('skymis', m));
   U.mounts.eng.forEach(m => add('skyengine', m));
   game.skycarrier = e;
+  return e;
+};
+/* The Harbinger: the volume 3 boss. Comes in on a bombing run from 2.6 km out at 280 m with an escort.
+   o.hpMul scales its health, o.dmg its weapons, o.escorts its fighter escort. */
+G.spawnHarbinger = (game, o = {}) => {
+  const P = game.player.pos, C = o.at || {x:P.x, z:P.z}, a = Math.atan2(P.x - C.x, P.z - C.z) + Math.PI + (Math.random() - 0.5);
+  const x = C.x + Math.sin(a)*2600, z = C.z + Math.cos(a)*2600, alt = Math.max(game.world.height(x, z), 0) + 300;
+  const e = G.spawn(game, 'harbinger', x, z, {alt, tag:o.task !== undefined ? 'obj' : null, yaw:Math.atan2(C.x - x, C.z - z)});
+  e.bossBar = 'THE HARBINGER'; e.cash = 0; e.hc = {x:C.x, z:C.z}; e.hp *= o.hpMul || 1; e.maxHp = e.hp; e.dmgMul *= o.dmg || 1;
+  if (o.task !== undefined) e.task = o.task;
+  for (let k = 0; k < (o.escorts || 0); k++) { const s = G.spawn(game, 'fighter', x + (k % 2 ? 1 : -1)*120, z - 120 - k*40, {alt:alt + 20}); s.dir = new V3(C.x - x, 0, C.z - z).normalize(); s.zone = null; }
+  game.harbinger = e;
   return e;
 };
 G.hollowRetreat = (game, e, driven) => {

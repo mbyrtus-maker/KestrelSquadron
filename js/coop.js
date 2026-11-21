@@ -25,6 +25,8 @@ const C = G.coop = {st:'off', role:null, code:'', myId:'', hostId:'', sig:null, 
 C.on = () => C.st === 'host' || C.st === 'joined';
 C.isHost = () => C.role === 'host' && !!C.link && C.link.open;
 C.isGuest = () => C.role === 'guest';
+// a co-op sortie is running with the link up: neither pilot's pause menu may stop the sky for the other
+C.live = g => !!(g && !g.over && C.link && C.link.open && (g.coopGuest || (g.coopHost && C.started)));
 
 function cfg(){
   const q = new URLSearchParams(location.search);
@@ -222,13 +224,19 @@ const baseSpawn = G.spawn;
 G.spawn = function(game, type, x, z, o = {}){
   if (o.v === undefined && type !== 'civ') o.v = Math.floor(Math.random()*3);
   const e = baseSpawn(game, type, x, z, o);
-  e.id = o.netId || C.nextId++; e.v = o.v; e.so = {type, x, z, alt:o.alt, yaw:e.yaw, v:o.v, w:o.w, d:o.d, h:o.h, tint:o.tint, tag:o.tag || null};
+  game.idMap = null; e.id = o.netId || C.nextId++; e.v = o.v; e.so = {type, x, z, alt:o.alt, yaw:e.yaw, v:o.v, w:o.w, d:o.d, h:o.h, tint:o.tint, tag:o.tag || null};
   if (game.coopHost) C.pend.push(e);
   return e;
 };
 const spawnRec = e => ({id:e.id, so:e.so, hp:e.hp, mx:e.maxHp, nm:e.name, ace:!!e.ace, boss:!!e.boss, bb:e.bossBar || null, task:e.task, team:e.team, a:e.alive});
 
 // host: wrap a few things so the guest hears about them
+const baseFlash = G.hud.flash.bind(G.hud), PERSONAL = /^(SMALL ARMS|HULL CONTACT|REACTOR SEALED|CLICK TO|AIR-TO-|BLADE HITS|REAVER PLATING)/;
+G.hud.flash = function(t){
+  if (C.game && C.game.coopGuest) { if (t === C.lastFlash && performance.now() - C.lastFlashT < 1500) return; C.lastFlash = t; C.lastFlashT = performance.now(); }
+  baseFlash(t); if (C.aiCtx && C.game && C.game.coopHost && C.started && !PERSONAL.test(t)) send({t:'flash', x:t}); };
+const baseOpsU = G.Ops.prototype.update;
+G.Ops.prototype.update = function(dt){ C.aiCtx = true; try { return baseOpsU.call(this, dt); } finally { C.aiCtx = false; } };
 const baseRadio = G.hud.radio.bind(G.hud);
 G.hud.radio = function(from, text){ baseRadio(from, text); if (C.game && C.game.coopHost && C.started) send({t:'radio', f:from, x:text}); };
 const baseKill = G.Game.prototype.kill;
@@ -271,7 +279,7 @@ function becomeRemote(Wg, name, frame){
 const CTL = ['thrust', 'aimYaw', 'aimPitch', 'wpn', 'swing', 'combo', 'block', 'walk', 'walkAmt', 'lp', 'lr', 'lt', 'ready', 'twist'];
 function poseOf(P){
   const F = P.F, r = F.root, c = F.ctl;
-  return {t:'p', p:[+r.position.x.toFixed(2), +r.position.y.toFixed(2), +r.position.z.toFixed(2)], q:[r.quaternion.x, r.quaternion.y, r.quaternion.z, r.quaternion.w].map(v => +v.toFixed(4)),
+  return {t:'p', tm:+P.g.time.toFixed(3), p:[+r.position.x.toFixed(2), +r.position.y.toFixed(2), +r.position.z.toFixed(2)], q:[r.quaternion.x, r.quaternion.y, r.quaternion.z, r.quaternion.w].map(v => +v.toFixed(4)),
     v:[P.vel.x, P.vel.y, P.vel.z].map(v => +v.toFixed(1)), m:P.mode, hp:Math.round(P.hp), mh:Math.round(P.maxHp), al:P.alive ? 1 : 0, c:CTL.map(k => +(c[k] || 0).toFixed(3)), f:P.alive && G.input.lmb && !(P.mode === 'mech' && P.wpn > 0.02) ? 1 : 0};
 }
 const tq = new THREE.Quaternion();
@@ -300,8 +308,13 @@ function hostRecv(m){
     if (G.ui.refresh) G.ui.refresh(); G.audio.chime && G.audio.chime();
     if (g && !g.over && !C.started) { g.coopHost = true; }
   } else if (m.t === 'ready') { if (g && g.coopHost) { C.ready = true; send({t:'spawn', l:g.ents.filter(e => e.id).map(spawnRec)}); C.pend = []; becomeRemote(g.wing, C.peerName, C.peerFrame); g.wing.hp = g.wing.maxHp; if (!g.wing.alive) { g.wing.alive = true; g.scene.add(g.wing.F.root); } G.hud.radio(C.peerName, 'On your wing, lead.'); } }
-  else if (m.t === 'p') { if (g && g.wing.remote) { m.at = performance.now(); g.wing.np = m; } }
-  else if (m.t === 'hit') { if (!g || g.over) return; const e = C.byId(g, m.id); if (e && e.alive) g.damageEnt(e, m.a, 'wing', {melee:!!m.me, bomb:!!m.bo}); }
+  else if (m.t === 'p') { if (g && g.wing.remote && !(g.wing.np && m.tm <= g.wing.np.tm)) { m.at = performance.now(); g.wing.np = m; } }
+  else if (m.t === 'hit') {   // believe a guest's hit within reason: the target is alive, an enemy, within weapon range of their Kestrel, a sane amount, a sane rate
+    if (!g || g.over) return; const e = C.byId(g, m.id), Wg = g.wing, S = C.claims || (C.claims = {ok:0, bad:0});
+    const a = +m.a; if (!e || !e.alive || e.team !== 'enemy' || !Wg.alive || !isFinite(a) || a <= 0) { S.bad++; return; }
+    if (Wg.pos.distanceTo(e.pos) > 5000) { S.bad++; return; }
+    if ((C.claimT || 0) < g.time - 1) { C.claimT = g.time; C.claimN = 0; } if (++C.claimN > 240) { S.bad++; return; }
+    S.ok++; g.damageEnt(e, Math.min(a, 30000), 'wing', {melee:!!m.me, bomb:!!m.bo}); }
   else if (m.t === 'flare') { if (!g) return; for (const ms of g.missiles) if (ms.team === 'enemy' && ms.target === g.wing && Math.random() < 0.7) ms.target = null; }
   else if (m.t === 'bye') { if (C.link) linkDown(C.link); }
 }
@@ -322,11 +335,15 @@ C.hostTick = (g, dt) => {
   C.snT -= dt; if (C.snT > 0) return; C.snT = 1/15;
   const Wg = g.wing, gp = Wg.pos, near = p => Math.abs(p.x - gp.x) < 3000 && Math.abs(p.z - gp.z) < 3000;
   const E = []; for (const e of g.ents) { if (!e.alive || !e.id) continue; const st = e.cls === 'struct' || e.cls === 'building';
-    if (st && e.hp === e.shp) continue; e.shp = e.hp; E.push([e.id, +e.pos.x.toFixed(1), +e.pos.y.toFixed(1), +e.pos.z.toFixed(1), +e.yaw.toFixed(3), Math.round(e.hp)]); }
+    if (st && e.hp === e.shp) continue; e.shp = e.hp; const row = [e.id, +e.pos.x.toFixed(1), +e.pos.y.toFixed(1), +e.pos.z.toFixed(1), +e.yaw.toFixed(3), Math.round(e.hp)];
+    if (e.fm) row.push(G.HARB_MODES.indexOf(e.fm), +e.mesh.rotation.x.toFixed(3), +e.mesh.rotation.z.toFixed(3), e.armored ? 1 : 0); E.push(row); }
   const B = []; for (const b of g.bullets) { if (b.vis || !near(b.pos) || B.length > 140) continue; B.push([+b.pos.x.toFixed(1), +b.pos.y.toFixed(1), +b.pos.z.toFixed(1), Math.round(b.vel.x), Math.round(b.vel.y), Math.round(b.vel.z), b.color, b.len, b.w, b.team === 'enemy' ? 1 : 0]); }
   const M = g.missiles.filter(ms => near(ms.pos)).slice(0, 40).map(ms => [ms.id || (ms.id = C.nextId++), +ms.pos.x.toFixed(1), +ms.pos.y.toFixed(1), +ms.pos.z.toFixed(1), +ms.dir.x.toFixed(3), +ms.dir.y.toFixed(3), +ms.dir.z.toFixed(3), ms.team === 'enemy' ? 1 : 0, ms.target === Wg ? 1 : 0]);
   const O = g.ops ? {c:g.ops.cur, r:g.ops.rtb ? 1 : 0, T:g.ops.tasks.map(T => { const [d, n] = g.ops.progress(T); return [T.done ? 1 : 0, d, n, T.arrived ? 1 : 0]; })} : null;
-  send({t:'s', tm:+g.time.toFixed(2), od:g.objDone, ot:g.objTotal, cp:g.complete ? 1 : 0, E, B, M, O}, true);
+  const snap = {t:'s', tm:+g.time.toFixed(3), od:g.objDone, ot:g.objTotal, cp:g.complete ? 1 : 0, E, B, M, O};   // kept small enough for the fast channel: bullets are trimmed first
+  let len = JSON.stringify(snap).length; while (len > 14000 && snap.B.length) { snap.B = snap.B.slice(0, Math.floor(snap.B.length*0.6)); len = JSON.stringify(snap).length; }
+  if (len > 14000) snap.M = snap.M.slice(0, 10);
+  send(snap, true);
 };
 
 // ---- guest side
@@ -334,8 +351,13 @@ function guestRecv(m){
   const g = C.game;
   if (m.t === 'start') { C.lead = {name:m.name, frame:m.frame}; G.ui.coopLaunch(Object.assign(m.m, {coopGuest:true, coopStart:m})); }
   else if (m.t === 'spawn') { if (!g) return; for (const r of m.l) guestSpawn(g, r); }
-  else if (m.t === 'p') { if (g && g.wing.remote) { m.at = performance.now(); g.wing.np = m; } }
-  else if (m.t === 's') { if (g) g.snap = m; }
+  else if (m.t === 'p') { if (g && g.wing.remote && !(g.wing.np && m.tm <= g.wing.np.tm)) { m.at = performance.now(); g.wing.np = m; } }
+  else if (m.t === 's') { if (!g || (g.snapTm !== undefined && m.tm <= g.snapTm)) return;   // the fast channel is unordered: drop a late snapshot
+    g.snapTm = m.tm; g.snap = m;
+    // clock: how far the host's game time runs ahead of ours, tracked on the quickest arrivals so a late packet doesn't drag it
+    const off = m.tm - g.time; C.off = C.off === undefined || Math.abs(off - C.off) > 2 ? off : off > C.off ? C.off + (off - C.off)*0.3 : C.off + (off - C.off)*0.02;
+    for (const r of m.E) { const e = C.byId(g, r[0]); if (!e) continue; const B = e.buf || (e.buf = []); B.push({t:m.tm, r}); if (B.length > 8) B.shift(); } }
+  else if (m.t === 'flash') { if (g) G.hud.flash(m.x); }
   else if (m.t === 'die') { if (!g) return; const e = C.byId(g, m.id); if (e && e.alive) g.kill(e, 'net', {}); }
   else if (m.t === 'dmg') { if (!g || g.over) return; const P = g.player; if (P.alive) P.damage(m.a, new V3(m.p[0], m.p[1], m.p[2])); }
   else if (m.t === 'radio') { if (g) baseRadio(m.f, m.x); }
@@ -347,12 +369,12 @@ function guestSpawn(g, r){
   if (C.byId(g, r.id)) return;
   const so = r.so, e = G.spawn(g, so.type, so.x, so.z, {netId:r.id, alt:so.alt, yaw:so.yaw, v:so.v, w:so.w, d:so.d, h:so.h, tint:so.tint, tag:so.tag});
   e.hp = r.hp; e.maxHp = r.mx; e.name = r.nm; e.ace = r.ace; e.boss = r.boss; e.bossBar = r.bb; e.task = r.task; e.team = r.team; e.np = null;
-  if (r.bb) { if (so.type === 'skycarrier') { g.skycarrier = e; e.mesh.rotation.order = 'YXZ'; } else if (so.type === 'colossus') g.sovereign = e; } if (r.boss) g.hollow = e;
+  if (r.bb) { if (so.type === 'skycarrier') { g.skycarrier = e; e.mesh.rotation.order = 'YXZ'; } else if (so.type === 'colossus') g.sovereign = e; else if (so.type === 'harbinger') { g.harbinger = e; e.mesh.rotation.order = 'YXZ'; G.harbSetMode(e, 'jet'); e.mesh.userData.F.setMode('jet', true); } } if (r.boss) g.hollow = e;
   if (!r.a) { e.alive = false; g.scene.remove(e.mesh); }
 }
 function guestStart(m){
   // same seed, same mission: identical terrain, carrier and waypoint layout; the host supplies everything that moves
-  m.story = null; m.wing = null;
+  m.story = null; m.wing = null; C.off = undefined;
   baseStart.call(this, m);
   if (this.intro) { this.intro = null; G.hud.intro(false); }          // the lead already did the carrier launch
   const s = m.coopStart, P = this.player;
@@ -379,12 +401,25 @@ G.spawnMission = function(game, L){
 // guest: enemies are puppets moved by the host's snapshots
 const baseUE = G.updateEnemy;
 G.updateEnemy = function(game, e, dt){
-  if (!game.coopGuest) return baseUE(game, e, dt);
-  const n = e.np; if (!n) return;
-  const k = Math.min(1, dt*10); e.vel.set((n[1] - e.pos.x)*2, (n[2] - e.pos.y)*2, (n[3] - e.pos.z)*2);
-  e.pos.x += (n[1] - e.pos.x)*k; e.pos.y += (n[2] - e.pos.y)*k; e.pos.z += (n[3] - e.pos.z)*k;
-  let dy = n[4] - e.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); e.yaw += dy*k;
-  e.hp = n[5]; e.mesh.position.copy(e.pos);
+  if (!game.coopGuest) { C.aiCtx = true; try { return baseUE(game, e, dt); } finally { C.aiCtx = false; } }   // host: flashes the AI raises go to the guest too
+  // drawn a tenth of a second in the past, between the two snapshots either side of that moment
+  const B = e.buf; if (!B || !B.length) return;
+  const rt = game.time + (C.off || 0) - 0.1; let A = B[0], Bn = null;
+  for (let i = B.length - 1; i >= 0; i--) if (B[i].t <= rt) { A = B[i]; Bn = B[i + 1] || null; break; }
+  let n = A.r, x, y, z, yaw = n[4];
+  if (Bn) { const rb = Bn.r, f = Math.max(0, Math.min(1, (rt - A.t)/Math.max(1e-3, Bn.t - A.t))); x = n[1] + (rb[1] - n[1])*f; y = n[2] + (rb[2] - n[2])*f; z = n[3] + (rb[3] - n[3])*f;
+    let dyw = rb[4] - n[4]; dyw = Math.atan2(Math.sin(dyw), Math.cos(dyw)); yaw = n[4] + dyw*f; const sp = 1/Math.max(1e-3, Bn.t - A.t); e.vel.set((rb[1] - n[1])*sp, (rb[2] - n[2])*sp, (rb[3] - n[3])*sp); }
+  else { const L = B[B.length - 1], P0 = B.length > 1 ? B[B.length - 2] : null; n = L.r;   // past the newest snapshot: coast on its velocity for at most a quarter second
+    if (P0) { const sp = 1/Math.max(1e-3, L.t - P0.t); e.vel.set((n[1] - P0.r[1])*sp, (n[2] - P0.r[2])*sp, (n[3] - P0.r[3])*sp); }
+    const k = Math.max(0, Math.min(0.25, rt - L.t)); x = n[1] + e.vel.x*k; y = n[2] + e.vel.y*k; z = n[3] + e.vel.z*k; yaw = n[4]; }
+  const far = (e.pos.x - x)**2 + (e.pos.y - y)**2 + (e.pos.z - z)**2 > 250*250, k = far ? 1 : 1 - Math.exp(-dt*30);
+  e.pos.x += (x - e.pos.x)*k; e.pos.y += (y - e.pos.y)*k; e.pos.z += (z - e.pos.z)*k;
+  let dy = yaw - e.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); e.yaw += dy*k;
+  e.hp = B[B.length - 1].r[5]; e.mesh.position.copy(e.pos); e.dir = e.dir || new V3();
+  if (e.type === 'harbinger') {   // the Harbinger: mode, attitude and transformation come from the host
+    const md = G.HARB_MODES[n[6]] || 'jet'; if (md !== e.fm) G.harbSetMode(e, md); e.armored = !!n[9];
+    e.mesh.rotation.set(n[7] || 0, e.yaw, n[8] || 0); const F = e.mesh.userData.F, mv = Math.hypot(e.vel.x, e.vel.z) > 3;
+    if (md === 'mech') { F.ctl.walkAmt = mv ? 1 : 0; e.wk = (e.wk || 0) + dt*(mv ? 2.2 : 0); F.ctl.walk = e.wk; } F.ctl.ready = 1.5; F.update(dt); e.mesh.userData.sync(dt); if (e.hitT > 0) e.hitT -= dt; return; }
   if (e.cls === 'air' && e.dir) { e.mesh.lookAt(e.pos.x + e.vel.x, e.pos.y + e.vel.y, e.pos.z + e.vel.z); } else e.mesh.rotation.y = e.yaw;
   if (e.hitT > 0) e.hitT -= dt;
   const U = e.mesh.userData; if (U.legs && e.cls === 'mech') { const mv = Math.hypot(e.vel.x, e.vel.z) > 1.5; e.wk = (e.wk || 0) + dt*(mv ? 5 : 0); const a = mv ? Math.sin(e.wk)*0.4 : 0; U.legs.forEach((L, i) => { if (L.userData.yaw0 === undefined) L.rotation.x = i % 2 ? -a : a; }); }
@@ -394,7 +429,6 @@ C.guestTick = (g, dt) => {
   const P = g.player;
   // snapshot -> puppets, shots, missiles, objectives
   const s = g.snap; if (s) { g.snap = null;
-    for (const r of s.E) { const e = C.byId(g, r[0]); if (e) { if (!e.np && e.cls === 'air') { e.pos.set(r[1], r[2], r[3]); } e.np = r; e.dir = e.dir || new V3(); } }
     for (const b of g.rb) b.dead = true;
     g.rb = s.B.map(b => ({pos:new V3(b[0], b[1], b[2]), vel:new V3(b[3], b[4], b[5]), color:b[6], len:b[7], w:b[8], life:0.3, vis:true, team:b[9] ? 'enemy' : 'player'}));
     const seen = new Set();
