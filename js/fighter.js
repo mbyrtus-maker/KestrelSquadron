@@ -64,7 +64,7 @@ const STYLE = {
   harbinger:{wing:'bomber',  span:6.05, nose:1.3,  bodyW:1.3,  num:'V01', big:true, armor:true, varn:true,
     // mech: each wing half folds flat onto the back, span down, the two halves stacked
     pose:{hover:{nose:{p:[0,0.05,1.6], s:0.01}},   // hover keeps its wings spread (the shared pose); only the fighter nose folds away
-      mech:{wingL:{p:[0.3,5.4,-1.3], b:[[0,-1,0],[0,0,-1],[1,0,0]], s:0.55}, wingR:{p:[-0.3,5.4,-1.38], b:[[0,1,0],[0,0,-1],[-1,0,0]], s:0.55}},
+      mech:{nose:{p:[0,3.0,-0.95], r:[90,180,0], s:0.01}, wingL:{p:[0.3,5.4,-1.3], b:[[0,-1,0],[0,0,-1],[1,0,0]], s:0.55}, wingR:{p:[-0.3,5.4,-1.38], b:[[0,1,0],[0,0,-1],[-1,0,0]], s:0.55}},
       // jet: every fighter part folds away inside the flying-wing shell (built in targets.js), and unfolds out of it on transformation
       jet:{body:{p:[0,0,0], s:0.5}, nose:{p:[0,0,1.2], s:0.01}, wingL:{p:[1.15,0.12,-0.7]}, wingR:{p:[-1.15,0.12,-0.7]},   // the wing halves sit exactly where the shell's halves are, so they visibly swing out of it
        

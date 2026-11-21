@@ -563,8 +563,13 @@ G.buildEnemy = function(type, o = {}){
       const k = u.shellK*u.shellK*(3 - 2*u.shellK); SH.visible = k > 0.02;
       for (const n of F.names) P[n].visible = !(u.shellK >= 1 && F.t >= 1 && n !== 'body');   // in full jet form only the shell (and the body inside it) is drawn
       if (u.turret) u.turret.position.y = 1.0 - 0.4*(1 - k); SH.scale.setScalar(1); SH.visible = k > 0.5;
-      const wc = F.mode === 'hover' ? 1 : 0; u.cockK += Math.sign(wc - u.cockK)*Math.min(Math.abs(wc - u.cockK), dt ? dt/0.6 : 1);
-      const c = u.cockK*u.cockK*(3 - 2*u.cockK); CK.visible = c > 0.02; CK.scale.setScalar(Math.max(0.02, c));
+      // the flying-wing nose section is the cockpit in hover (out front) and the chest plate in mech (point down, windows forward)
+      const ckm = F.mode === 'jet' ? null : F.mode; if (!dt || u.ckMode === undefined) { u.ckMode = ckm; u.cockK = ckm && !dt ? 1 : 0; }
+      const wc = ckm && ckm === u.ckMode ? 1 : 0; u.cockK += Math.sign(wc - u.cockK)*Math.min(Math.abs(wc - u.cockK), dt ? dt/0.35 : 1);
+      if (u.cockK <= 0 && u.ckMode !== ckm) u.ckMode = ckm;
+      const c = u.cockK*u.cockK*(3 - 2*u.cockK); CK.visible = c > 0.02;
+      if (u.ckMode === 'mech') { CK.position.set(0, 5.75, 1.12); CK.rotation.set(Math.PI/2, 0, 0); CK.scale.setScalar(Math.max(0.02, 0.62*c)); }
+      else { CK.position.set(0, 0, 0); CK.rotation.set(0, 0, 0); CK.scale.setScalar(Math.max(0.02, c)); }
     };
   } else if (type === 'skyflak') {
     // twin-barrel flak turret on a ring mount; u.head turns, u.muzzle is the gun tip
