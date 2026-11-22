@@ -351,8 +351,9 @@ const H = G.hud = {
       x.restore(); x.textAlign = 'center'; x.fillText('▼', cx, 12); x.textAlign = 'left';
       const spd = Math.round((P.mode === 'jet' ? P.speed : Math.hypot(P.vel.x, P.vel.z))*3.6), alt = Math.round(P.pos.y);
       x.strokeRect(cx - 250, cy - 12, 70, 24); x.fillText(String(spd).padStart(4, ' '), cx - 240, cy + 5);
-      x.strokeRect(cx + 180, cy - 12, 70, 24); x.fillText(String(alt).padStart(5, ' '), cx + 188, cy + 5);
-      x.globalAlpha = 0.6; x.fillText('KM/H', cx - 250, cy - 18); x.fillText('ALT M', cx + 180, cy - 18); x.globalAlpha = 1;      this.stores(x, P, cx, cy, col);
+      const sp = game.world.space;   // no altimeter in orbit: there's no up or down out there
+      if (!sp) { x.strokeRect(cx + 180, cy - 12, 70, 24); x.fillText(String(alt).padStart(5, ' '), cx + 188, cy + 5); }
+      x.globalAlpha = 0.6; x.fillText('KM/H', cx - 250, cy - 18); if (!sp) x.fillText('ALT M', cx + 180, cy - 18); x.globalAlpha = 1;      this.stores(x, P, cx, cy, col);
     }
     // world markers
     const range = P.st.radar;
@@ -459,7 +460,7 @@ const H = G.hud = {
       else if (P.lockedBy > 0) warn = 'LOCK WARNING';
       else if (P.outAO) warn = Math.hypot(P.pos.x, P.pos.z) > 7100 ? 'AREA BOUNDARY · TURNING BACK' : 'LEAVING AREA OF OPERATIONS';
       else if (P.hp/P.maxHp < 0.25) { warn = game.pickups && game.pickups.length ? 'HULL CRITICAL · GREEN BEACON = REPAIRS' : 'HULL CRITICAL'; wc = RED; }
-      this.ralt(x, P, cx, cy, Hh, W, col);
+      if (!game.world.space) this.ralt(x, P, cx, cy, Hh, W, col);
     }
     if (P.alive && P.gpws === 2 && (performance.now() % 500) < 330) {
       x.save(); x.strokeStyle = RED; x.fillStyle = RED; x.lineWidth = 3; x.textAlign = 'center';
@@ -498,12 +499,12 @@ const H = G.hud = {
     const L = (id, on) => { const e = q(id); if (e) e.classList.toggle('on', !!on); };
     const cl = (v, a, b) => Math.max(a, Math.min(b, v));
     const hdg = Math.round(((-P.yaw*180/Math.PI) % 360 + 360) % 360), hs = Math.hypot(P.vel.x, P.vel.z), hull = P.hp/P.maxHp;
-    const spd = Math.round((m === 'jet' ? P.speed : hs)*3.6), agl = Math.max(0, Math.round(P.agl));
+    const spd = Math.round((m === 'jet' ? P.speed : hs)*3.6), agl = Math.max(0, Math.round(P.agl)), sp = !!(P.g && P.g.world && P.g.world.space);
     const tg = P.target && P.target.alive ? P.target : null;
     const needle = (id, frac, cx, cy) => at(id, 'transform', `rotate(${(-135 + 270*cl(frac, 0, 1)).toFixed(1)} ${cx} ${cy})`);
     if (m === 'jet') {
       at('jAdi', 'transform', `rotate(${(-P.roll*180/Math.PI).toFixed(1)} 800 772) translate(0 ${(P.pitch*180/Math.PI*2.6).toFixed(1)})`);
-      t('jSpd', String(spd)); t('jAlt', String(Math.round(P.pos.y))); t('jAgl', String(agl)); t('jHdg', String(hdg).padStart(3, '0'));
+      t('jSpd', String(spd)); t('jAlt', sp ? '---' : String(Math.round(P.pos.y))); t('jAgl', sp ? '---' : String(agl)); t('jHdg', String(hdg).padStart(3, '0'));
       const th = cl(P.throttle, 0, 1); at('jThr', 'y', (860 - 120*th).toFixed(1)); at('jThr', 'height', (120*th).toFixed(1));
       at('jThrLever', 'transform', `translate(0 ${(-th*80).toFixed(1)})`);
       needle('jVsiN', 0.5 + P.vel.y/100, 655, 812); t('jVsiT', String(Math.round(P.vel.y)));
@@ -515,7 +516,7 @@ const H = G.hud = {
       L('jL_arm', P.lockedList.length > 0); L('jL_ecm', P.jam);
     } else if (m === 'hover') {
       needle('hSpdN', spd/300, 225, 772); t('hSpdT', String(spd));
-      needle('hAltN', agl/300, 365, 806); t('hAltT', String(agl));
+      needle('hAltN', sp ? 0 : agl/300, 365, 806); t('hAltT', sp ? '---' : String(agl));
       needle('hVsiN', 0.5 + P.vel.y/60, 1235, 806); t('hVsiT', String(Math.round(P.vel.y)));
       at('hHdgCard', 'transform', `rotate(${-hdg} 1375 772)`); t('hHdgT', String(hdg).padStart(3, '0'));
       at('hColl', 'transform', `translate(0 ${(-cl(P.vel.y/30, -1, 1)*40).toFixed(1)})`);
@@ -529,7 +530,7 @@ const H = G.hud = {
       t('mPod', P.w.pod.name.split(' ')[0]); t('mMel', P.cd.mel > 0 ? 'SWING' : 'READY'); t('mShd', P.block > 0.5 ? 'UP' : 'DOWN'); t('mFlr', String(P.flares));
       t('mTgtN', tg ? tg.name.toUpperCase() : 'NO TARGET'); t('mTgtD', tg ? `${Math.round(tg.pos.distanceTo(P.pos))} m` : '-');
       at('mTgtBar', 'width', tg ? (168*cl(tg.hp/tg.maxHp, 0, 1)).toFixed(1) : '0');
-      t('mVs', String(Math.round(P.vel.y))); t('mAgl', String(agl));
+      t('mVs', String(Math.round(P.vel.y))); t('mAgl', sp ? '---' : String(agl));
       L('mL_msl', P.incoming > 0); L('mL_lock', P.lockedBy > 0); L('mL_gpws', P.gpws > 0); L('mL_shd', P.block > 0.5); L('mL_ecm', P.jam);
     }
   },
