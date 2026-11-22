@@ -36,6 +36,7 @@ G.Game = class {
       const P = this.player, S = m.startAt || {x:0, y:120, z:-5200}; P.pos.set(S.x, S.y, S.z); P.yaw = S.yaw || 0; P.pitch = 0; P.speed = 190; P.vel.set(0, 0, 190); P.throttle = 0.65;
       this.wing.pos.set(S.x - 40, S.y + 6, S.z - 40); this.wing.dir.set(0, 0, 1); }
     if (m.type === 'training') { this.training = new G.Training(this); } else G.spawnMission(this, L);
+    G.placeCaches(this);
     this.hullStart = this.player.hp/this.player.maxHp;
     this.resize();
     G.hud.begin(this);
@@ -68,7 +69,7 @@ G.Game = class {
     if (this.intro) {
       this.intro.update(dt); this.world.follow(this.player.pos); this.fx.update(dt);
       if (!this.intro.done) return;
-      this.intro = null;
+      this.intro = null; this.introEndT = this.time;
     }
     if (this.carrierMesh) this.carrierMesh.userData.spin.rotation.y += dt*1.4;
     this.time += dt; const P = this.player;
@@ -528,13 +529,42 @@ G.maybeDrop = (game, e, at) => {
   const always = /^(depot|command)$/.test(e.type) || e.bossBar || e.boss;
   const chance = always ? 1 : e.cls === 'air' ? 0.1 : e.cls === 'struct' || e.cls === 'building' ? 0.3 : 0.14;
   if (Math.random() > chance) return;
+  const W = game.world, gy = Math.max(W.height(at.x, at.z), 0), y = e.cls === 'air' ? Math.max(at.y, gy + 40) : gy + 6;
+  G.makePickup(game, at.x, y, at.z, {life:50});
+};
+// Supply caches: every mission and map starts with at least two permanent canisters placed between the start and the
+// fight. A taken cache is replaced elsewhere after a while, so there are always two out there to fall back on.
+G.placeCache = (game, i, n) => {
+  const P = game.player, W = game.world, en = game.ents.filter(e => e.alive && e.team === 'enemy');
+  const tx = en.length ? en.reduce((a, e) => a + e.pos.x, 0)/en.length : (game.center ? game.center.x : P.pos.x);
+  const tz = en.length ? en.reduce((a, e) => a + e.pos.z, 0)/en.length : (game.center ? game.center.z : P.pos.z + 3000);
+  const ty = en.length ? en.reduce((a, e) => a + e.pos.y, 0)/en.length : P.pos.y;
+  let dx = tx - P.pos.x, dz = tz - P.pos.z; const d = Math.hypot(dx, dz);
+  if (d < 900) { dx = 0; dz = 1; } else { dx /= d; dz /= d; }
+  const span = Math.max(d, 1800), f = n > 1 ? 0.3 + 0.4*i/(n - 1) : 0.5, side = (i % 2 ? 1 : -1)*(450 + Math.random()*350);
+  for (let tries = 0; tries < 12; tries++) {
+    const j = tries*90, x = P.pos.x + dx*span*f - dz*side + (Math.random() - 0.5)*j, z = P.pos.z + dz*span*f + dx*side + (Math.random() - 0.5)*j;
+    let y;
+    if (W.space) { y = P.pos.y + (ty - P.pos.y)*f + 40; if (G.stationSolid && G.stationSolid(new THREE.Vector3(x, y, z), 30)) continue; }
+    else { const gy = W.height(x, z); if (gy > 900) continue; y = Math.max(gy, 0) + 6; }
+    if (game.pickups.some(k => k.pos.distanceTo(new THREE.Vector3(x, y, z)) < 400)) continue;
+    return G.makePickup(game, x, y, z, {cache:true});
+  }
+  return G.makePickup(game, P.pos.x + dx*span*f, W.space ? P.pos.y + 40 : Math.max(W.height(P.pos.x + dx*span*f, P.pos.z + dz*span*f), 0) + 6, P.pos.z + dz*span*f, {cache:true});
+};
+G.placeCaches = game => {
+  const n = 2; for (let i = 0; i < n; i++) G.placeCache(game, i, n);
+  const S = G.STATION; if (game.world.space && G.stationLive && S) G.makePickup(game, S.x + 60, S.y - S.hh + 14, S.z - 60, {cache:true, inside:true});
+};
+G.makePickup = (game, x, y, z, o = {}) => {
   if (!PICK_GEO.box) { PICK_GEO.box = new THREE.BoxGeometry(3.2, 2.2, 3.2); PICK_GEO.band = new THREE.BoxGeometry(3.3, 0.5, 3.3); PICK_GEO.beam = new THREE.CylinderGeometry(0.7, 0.7, 160, 8, 1, true);
     PICK_GEO.mBox = new THREE.MeshStandardMaterial({color:0xdfe6e2, roughness:0.5, metalness:0.3}); PICK_GEO.mBand = new THREE.MeshBasicMaterial({color:0x4dff8a});
     PICK_GEO.mBeam = new THREE.MeshBasicMaterial({color:0x4dff8a, transparent:true, opacity:0.28, depthWrite:false, blending:THREE.AdditiveBlending}); }
   const g = new THREE.Group(), box = new THREE.Mesh(PICK_GEO.box, PICK_GEO.mBox); g.add(box); g.add(new THREE.Mesh(PICK_GEO.band, PICK_GEO.mBand));
   const beam = new THREE.Mesh(PICK_GEO.beam, PICK_GEO.mBeam); beam.position.y = 80; g.add(beam);
-  const W = game.world, gy = Math.max(W.height(at.x, at.z), 0), y = e.cls === 'air' ? Math.max(at.y, gy + 40) : gy + 6;
-  g.position.set(at.x, y, at.z); game.scene.add(g); game.pickups.push({g, pos:g.position, t:0, life:50, amt:0.3});
+  if (o.cache) g.scale.setScalar(1.5);
+  g.position.set(x, y, z); game.scene.add(g); const k = {g, pos:g.position, t:0, life:o.cache ? Infinity : o.life || 50, amt:0.3, cache:!!o.cache, inside:!!o.inside};
+  game.pickups.push(k); return k;
 };
 G.updatePickups = (game, dt) => {
   const P = game.player;
@@ -543,7 +573,10 @@ G.updatePickups = (game, dt) => {
     if (k.t > k.life - 5) k.g.visible = Math.floor(k.t*6) % 2 === 0;   // blinks before it expires
     if (P.alive && P.pos.distanceTo(k.pos) < 45) {
       k.done = true; const add = P.maxHp*k.amt; P.hp = Math.min(P.maxHp, P.hp + add);
-      G.hud.flash(`HULL REPAIRED +${Math.round(k.amt*100)}%`); G.audio.tone(660, 0.18, 'sine', 0.07, 990); G.audio.tone(990, 0.22, 'sine', 0.05, 1320);
+      P.mis = Math.min(P.maxMis, P.mis + Math.ceil(P.maxMis*0.5)); P.bombs = Math.min(P.maxBombs, P.bombs + Math.ceil(P.maxBombs*0.5));
+      P.flares = Math.min(P.st.flares, P.flares + Math.ceil(P.st.flares*0.5)); if (P.F && P.F.setMissiles) P.F.setMissiles(P.mis/P.maxMis);
+      G.hud.flash(`HULL REPAIRED +${Math.round(k.amt*100)}% · AMMO RESUPPLIED`);
+      if (k.cache && !k.inside) game.later(60, () => { if (!game.over) { G.placeCache(game, Math.floor(Math.random()*2), 2); G.hud.radio('Bastion', 'Fresh supply cache dropped. Look for the green beacon.'); } }); G.audio.tone(660, 0.18, 'sine', 0.07, 990); G.audio.tone(990, 0.22, 'sine', 0.05, 1320);
     }
     if (k.done || k.t > k.life) game.scene.remove(k.g);
   }

@@ -405,6 +405,7 @@ class Batch {
   build(parent, shadow = true){
     const out = [];
     for (const [mat, e] of this.map) {
+      if (this.warp) for (let i = 0; i < e.p.length; i += 3) e.p[i] = this.warp(e.p[i], e.p[i + 1], e.p[i + 2]);   // a smooth bend applied to the merged parts
       const g = new THREE.BufferGeometry(), p = e.p; g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(e.n, 3));
       if (mat.map || mat.normalMap) {   // box-projected UVs: each triangle is mapped along its dominant axis, at a fixed number of tiles per metre
         const k = mat.userData.uv || 1/96, uv = new Float32Array(p.length/3*2);
@@ -439,13 +440,19 @@ function loft(secs, closed){
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3)); g.computeVertexNormals(); return g;
 }
 G.buildCarrier = function(space){
-  /* The Bastion: a trimaran battle carrier that sails and flies. A deep central hull carries the flight deck; two slender
-     armoured lance hulls ride outboard and run on well past the bow, each tipped with a rail battery; armoured wing-bridges
-     tie them to the hull. Aft, a stepped command citadel stands over the main engine block. Allied palette: light grey
-     hull, slate-blue armour, navy trim, orange safety markings, a red boot line at the water.
+  /* The Bastion: a battle carrier that sails and flies, built so you can see how it would unfold into a giant mech (it never
+     does in play). The deep central hull under the flight deck is the torso. The two lance hulls outboard are its arms, stowed
+     pointing forward: shoulder pivots on the quarters, an elbow hinge, an armoured forearm with a rail battery, and a closed
+     fist at each tip; locking clamps hold them to the hull. The stern is the pair of legs folded aft: hip pivots, thighs,
+     knees, shins, and feet whose soles are the main engines. The citadel on the pelvis is the chest, with the head on lift
+     rams above it. Allied palette: light grey hull, slate-blue armour, navy trim, orange safety markings, a red boot line.
      Fixed by gameplay (launch sequence, landing, world.height): the flight deck plane and its lanes, the island's footprint,
      the elevator, the blast deflector, and the clear air over the deck's middle and ahead of the bow. */
   const g = new THREE.Group(), D = C.deck, u = g.userData, PI = Math.PI, B = new Batch(), R = rng(6101);
+  // The lance hulls toe in toward the bow, so the ship is wide at the stern and narrows forward: everything outboard of
+  // the hull (|x| > 70, blending in from 52) is bent inward by 7 cm per metre forward of z = -150 (their tips end about 43 m off the centreline, below the deck).
+  const TOE = 0.07, warp = (x, y, z) => { const ax = Math.abs(x), t = Math.max(0, Math.min(1, (ax - 52)/18)), w = t*t*(3 - 2*t); return x - Math.sign(x)*w*Math.max(0, z + 150)*TOE; };
+  B.warp = warp;
   const ps = panelSet('ally', 31, {win:0.12, cells:1, depth:7, base:206, vary:11, dark:0.88, bump:2.2});
   const S = (o, uv) => { const m = new THREE.MeshStandardMaterial(Object.assign({roughness:0.64, metalness:0.3}, o)); m.userData.uv = uv || 1/70; return m; }, basic = (c, o) => new THREE.MeshBasicMaterial(Object.assign({color:c}, o));
   const hull = S({color:0xa4abb1, map:ps.map, normalMap:ps.normalMap, emissive:0xffffff, emissiveMap:ps.emissiveMap, emissiveIntensity:0.8});
@@ -465,7 +472,7 @@ G.buildCarrier = function(space){
 
   /* ---- central hull: upper works in grey, underwater body in navy, a red boot line between ---- */
   // stations: z, half-widths at the gallery (top), at mid height (y 30), at the waterline (y 4) and at the bottom; top and bottom heights
-  const ST = [[-300, 44, 47, 42, 26, D - 5, -16], [-200, 46, 50, 46, 30, D - 5, -18], [120, 46, 50, 46, 30, D - 5, -18], [220, 41, 38, 30, 14, D - 5, -17], [292, 35, 25, 14, 5, D - 5.5, -15], [342, 19, 11, 5, 2, D - 6, -12]];
+  const ST = [[-300, 62, 68, 58, 36, D - 5, -16], [-252, 47, 51, 47, 31, D - 5, -18], [-200, 46, 50, 46, 30, D - 5, -18], [120, 46, 50, 46, 30, D - 5, -18], [220, 41, 38, 30, 14, D - 5, -17], [292, 35, 25, 14, 5, D - 5.5, -15], [342, 19, 11, 5, 2, D - 6, -12]];
   const up = ([z, wT, wM, wW, , yT]) => [[wW, 4, z], [wM, 30, z], [wT, yT, z], [-wT, yT, z], [-wM, 30, z], [-wW, 4, z]];
   const lo = ([z, , , wW, wB, , yB]) => [[wB, yB, z], [wW, 4, z], [-wW, 4, z], [-wB, yB, z]];
   const prowU = [[1, 4, 358], [1.6, 30, 376], [2.4, D - 6.6, 392], [-2.4, D - 6.6, 392], [-1.6, 30, 376], [-1, 4, 358]], prowL = [[0.6, -9, 346], [1, 4, 358], [-1, 4, 358], [-0.6, -9, 346]];
@@ -494,58 +501,98 @@ G.buildCarrier = function(space){
   for (const z of [80, -120]) { yc(5, 4, 3, 8, hullD, 0, -41, z, true); bx(5, 2.4, 6, plate, 0, -43.5, z); for (const o of [-1, 1]) zc(0.3, 0.3, 8, 6, trim, o, -43.8, z + 6); }
   for (let z = -180; z <= 160; z += 40) for (const s of [-1, 1]) bx(0.8, 0.5, 4, z % 80 ? lamp : redLamp, s*(wAt(z, 4)*0.62), lerp(-17.6, -18.3, 0.5), z);
 
-  /* ---- the two lance hulls and their wing-bridges ---- */
+  /* ---- the two lance hulls are the arms, stowed pointing forward: shoulder pivot on the hull's quarter, upper arm, elbow hinge,
+          armoured forearm carrying the rail battery, wrist collar and a closed fist. Locking clamps tie them to the hull. ---- */
   const LX = 84, lsec = (z, k, yb, y1, y2, yt, s) => [[6*k, yb], [14*k, y1], [14*k, y2], [9*k, yt], [-9*k, yt], [-14*k, y2], [-14*k, y1], [-6*k, yb]].map(([x, y]) => [s*LX + x, y, z]);
+  const xc = (r, len, seg, m, x, y, z, fl) => { const c = new THREE.CylinderGeometry(r, r, len, seg).rotateZ(PI/2); B.add(m, fl ? flat(c) : c, x, y, z); };   // cylinder across the ship (a hinge drum)
+  // a hinge: drum, hub caps, orange index rings and a ring of bolts on each face
+  const hinge = (x, y, z, r, len) => { xc(r, len, 20, hullD, x, y, z); xc(r*0.5, len + 3, 12, trim, x, y, z); for (const o of [-1, 1]) { xc(r*1.04, 1.4, 20, orange, x + o*(len/2 - 1.6), y, z); xc(r*0.3, len + 5, 8, white, x, y, z);
+      for (let i = 0; i < 8; i++) { const a = i*PI/4; bx(0.8, 1.2, 1.2, trim, x + o*(len/2 + 0.3), y + Math.sin(a)*r*0.76, z + Math.cos(a)*r*0.76); } } };
+  const piston = (x, y, z0, z1, r = 1.5) => { const L = Math.abs(z1 - z0), zm = (z0 + z1)/2; zc(r, r, L, 8, white, x, y, zm); zc(r*1.7, r*1.7, L*0.45, 8, hullD, x, y, z0 + (z1 - z0)*0.26); for (const z of [z0, z1]) bx(r*3, r*3, r*2.4, trim, x, y, z); };
   for (const s of [-1, 1]) {
-    B.add(armour, loft([lsec(-124, 0.72, -4, 10, 30, 36, s), lsec(-96, 1, -10, 8, 32, 40, s), lsec(300, 1, -10, 8, 32, 40, s), lsec(384, 0.62, -3, 10, 30, 36, s), lsec(436, 0.2, 13, 17, 25, 29, s)]));
-    B.add(navy, loft([-96, 300].map(z => [[s*LX + 6.3, -10.4, z], [s*LX + 12.7, 4, z], [s*LX - 12.7, 4, z], [s*LX - 6.3, -10.4, z]])));
-    bx(25.8, 1.6, 392, red, s*LX, 4.6, 103);                                                             // boot line
-    bx(15, 1.2, 380, plate, s*LX, 40.4, 106); bx(18.6, 0.4, 380, orange, s*LX, 39.6, 106);                // weather deck
-    bx(29.2, 2.2, 300, hullD, s*LX, 20, 100); bx(29.6, 0.6, 300, orange, s*LX, 27, 100);                  // armour strake and safety line
-    for (let z = -80; z <= 290; z += 37) { bx(29.4, 22, 2.6, hullD, s*LX, 20, z); bx(0.8, 0.8, 0.8, z % 2 ? redLamp : lamp, s*(LX + s*14.8), 30, z + 18); bx(0.8, 0.8, 0.8, lamp, s*(LX - s*14.8), 30, z + 18); }
-    B.add(plate, loft([ys(41, 4, 250, -70, s*LX), ys(45, 2.4, 236, -60, s*LX)]));                          // spine fairing
-    B.add(armour, loft([ys(40, 2, -58, -116, s*LX), ys(58, 0.8, -92, -122, s*LX)])); B.add(orange, loft([ys(55, 1.2, -86.6, -121.3, s*LX), ys(58.2, 1, -92, -122.2, s*LX)])); B.add(navy, loft([ys(-9, 2, -50, -112, s*LX), ys(-25, 0.8, -84, -116, s*LX)]));
-    for (const z of [-40, 60, 150, 280]) turret(s*LX, z === 280 ? 41 : 45, z, 0, 1.5);
-    for (const z of [10, 105, 200]) { bx(7, 0.5, 26, trim, s*(LX + s*5.2), 41.1, z); for (let i = -2; i <= 2; i++) bx(5, 0.4, 3.6, hullD, s*(LX + s*5.2), 41.45, z + i*5); bx(7.6, 0.3, 27, orange, s*(LX + s*5.2), 40.95, z); }   // missile hatches
-    // rail battery in the tip: a slotted housing with two glowing rails
-    B.add(hullD, loft([lsec(380, 0.66, -1, 11, 29, 35, s), lsec(402, 0.5, 4, 13, 28, 33, s)])); bx(2.4, 9, 46, trim, s*LX, 21, 440); for (const o of [-1, 1]) { bx(1.6, 3, 52, hullD, s*LX + o*3.4, 21, 440); bx(0.5, 1.4, 44, railM, s*LX + o*2.4, 21, 442); }
-    bx(9, 13, 3, orange, s*LX, 21, 418.5); bx(10, 14, 2, hullD, s*LX, 21, 416);
-    // lance engine
-    zc(8, 10.5, 18, 12, hullD, s*LX, 18, -133, true); zc(11, 11, 2.4, 12, trim, s*LX, 18, -142, true);
-    B.add(space ? glowM : trim, new THREE.CircleGeometry(8.6, 12).rotateY(PI), s*LX, 18, -142.1);
-    // wing-bridges: an aft pair and a forward pair of armoured spans, hangar doors glowing underneath
-    for (const [zf, zb] of [[-34, -104], [196, 118]]) {
+    // shoulder: a clavicle stub out of the hull, the pivot drum, and a pauldron over it
+    bx(26, 24, 44, hullD, s*58, 22, -150); bx(26.6, 1.2, 45, orange, s*58, 35, -150); bx(22, 3, 50, plate, s*58, 36.5, -150);
+    hinge(s*LX, 20, -150, 21, 34);
+    B.add(armour, loft([ys(34, 19.5, -112, -188, s*LX), ys(44, 18, -116, -184, s*LX), ys(52, 12, -128, -174, s*LX)])); bx(24.6, 1, 60, orange, s*LX, 44.6, -150); bx(6, 1.6, 30, hullD, s*LX, 52.6, -151);
+    B.add(navy, loft([ys(-12, 9, -128, -172, s*LX), ys(6, 17, -116, -184, s*LX)]));
+    // upper arm
+    B.add(armour, loft([lsec(-120, 0.86, -6, 9, 31, 37, s), lsec(-106, 1, -10, 8, 32, 40, s), lsec(66, 1, -10, 8, 32, 40, s), lsec(80, 0.84, -5, 10, 30, 36, s)]));
+    B.add(navy, loft([-106, 66].map(z => [[s*LX + 6.3, -10.4, z], [s*LX + 12.7, 4, z], [s*LX - 12.7, 4, z], [s*LX - 6.3, -10.4, z]])));
+    bx(15, 1.2, 164, plate, s*LX, 40.4, -20); bx(18.6, 0.4, 164, orange, s*LX, 39.6, -20); bx(29.2, 2.2, 150, hullD, s*LX, 20, -22); bx(29.6, 0.6, 150, orange, s*LX, 27, -22);
+    for (const z of [-96, -58, -20, 18, 56]) bx(29.4, 22, 2.6, hullD, s*LX, 20, z);
+    // elbow: hinge drum between two cheek plates, pistons bridging the joint above and outboard
+    hinge(s*LX, 15, 96, 15, 31); for (const o of [-1, 1]) { bx(1.6, 30, 44, plate, s*LX + o*15.2, 16, 96); bx(2, 4, 48, orange, s*LX + o*15.3, 32, 96); piston(s*LX + o*5, 43.4, 52, 138); }
+    piston(s*(LX + 16.4), 8, 60, 132, 1.3);
+    // forearm: a heavier armoured gauntlet
+    B.add(armour, loft([lsec(110, 0.9, -6, 9, 31, 37, s), lsec(124, 1.1, -11, 7, 33, 41, s), lsec(300, 1.1, -11, 7, 33, 41, s), lsec(350, 0.96, -8, 8, 32, 39, s), lsec(362, 0.8, -3, 10, 30, 36, s)]));
+    B.add(navy, loft([124, 300].map(z => [[s*LX + 6.9, -11.4, z], [s*LX + 13.6, 4, z], [s*LX - 13.6, 4, z], [s*LX - 6.9, -11.4, z]])));
+    bx(16.4, 1.2, 190, plate, s*LX, 41.5, 222); bx(32, 2.4, 170, hullD, s*LX, 20, 214); bx(32.4, 0.6, 170, orange, s*LX, 27.4, 214);
+    for (const z of [140, 178, 216, 254, 292]) { bx(32.2, 24, 2.6, hullD, s*LX, 20, z); for (const o of [-1, 1]) bx(0.8, 0.8, 0.8, o*s > 0 && z % 4 ? redLamp : lamp, s*LX + o*16.2, 31, z + 19); }
+    bx(27.6, 1.6, 420, red, s*LX, 4.6, 125);                                                               // boot line
+    for (const z of [-60, 20]) turret(s*LX, 41, z, 0, 1.5); turret(s*LX, 42.1, 160, 0, 1.5);
+    for (const z of [-22, 222]) { const y = z > 100 ? 42.2 : 41.1; bx(7, 0.5, 26, trim, s*(LX + s*5.2), y, z); for (let i = -2; i <= 2; i++) bx(5, 0.4, 3.6, hullD, s*(LX + s*5.2), y + 0.35, z + i*5); bx(7.6, 0.3, 27, orange, s*(LX + s*5.2), y - 0.15, z); }   // missile hatches
+    // forearm battery: a housing on the gauntlet with two rails running out over the fist
+    B.add(hullD, loft([ys(41, 8, 372, 262, s*LX), ys(49, 5.6, 368, 276, s*LX)])); bx(11.6, 0.8, 80, orange, s*LX, 45, 322);
+    bx(2.4, 5, 64, trim, s*LX, 45.4, 402); for (const o of [-1, 1]) { bx(1.8, 3.4, 72, hullD, s*LX + o*3.5, 45.4, 404); bx(0.5, 1.4, 62, railM, s*LX + o*2.4, 45.4, 406); } bx(10, 7.6, 3, orange, s*LX, 45.4, 373);
+    // wrist collar and the fist: knuckle guard, four folded fingers, a thumb on the inboard side
+    zc(12.6, 12.6, 5, 10, trim, s*LX, 17, 365, true); zc(13.4, 13.4, 1.6, 10, orange, s*LX, 17, 365, true);
+    bx(22, 24, 30, hullD, s*LX, 17, 384); bx(23, 7, 9, plate, s*LX, 26.5, 398); bx(23.4, 1, 4, orange, s*LX, 29.6, 371.5);
+    for (let i = 0; i < 4; i++) { const fx = s*LX - 8.1 + i*5.4; bx(4.6, 9, 9, plate, fx, 19, 402.5); bx(4.6, 9, 7, armour, fx, 10.4, 401.5); xc(2.2, 4.8, 8, trim, fx, 23.6, 404, true); xc(1.8, 4.8, 8, trim, fx, 14.6, 404.6, true); }
+    bx(5, 9, 18, plate, s*(LX - 13.2), 12, 388, 0, 0.1); bx(5.2, 6, 8, armour, s*(LX - 13.2), 12.6, 400); xc(2.6, 6, 8, trim, s*(LX - 13.2), 13, 378, true);
+    // locking clamps: an aft pair and a forward pair of armoured spans that hold the stowed arms, hangar doors glowing underneath
+    for (const [zf, zb] of [[-34, -104], [196, 126]]) {
       B.add(armour, loft([[[s*42, 46, zf + 8], [s*42, 46, zb - 8], [s*42, 22, zb - 4], [s*42, 22, zf + 4]], [[s*74, 39, zf], [s*74, 39, zb], [s*74, 24, zb], [s*74, 24, zf]]]));
       const zm = (zf + zb)/2; bx(20, 1, zf - zb - 14, plate, s*59, 43.6, zm, 0, 0, -s*0.2); bx(24, 0.5, 2, orange, s*59, 43.9, zf - 5, 0, 0, -s*0.2); bx(24, 0.5, 2, orange, s*59, 43.9, zb + 5, 0, 0, -s*0.2);
+      for (const o of [-1, 1]) { bx(5, 9, 6, hullD, s*72, 42, zm + o*(zf - zb)*0.3); bx(5.4, 2, 6.4, orange, s*72, 45.6, zm + o*(zf - zb)*0.3); }                         // latch blocks biting the arm
       bx(18, 0.5, zf - zb - 24, bayM, s*60, 22.6, zm); for (const o of [-1, 1]) bx(16, 0.4, 1, bayL, s*60, 22.3, zm + o*(zf - zb - 30)/2);
     }
     const fo = new THREE.MeshBasicMaterial({color:0xeef4f4, transparent:true, opacity:0.3, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
-    if (!space) { for (const [x, len, zc0] of [[s*48, 560, 0], [s*(LX + 15), 520, 150], [s*(LX - 15), 520, 150]]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(3.4, len), fo); w.rotation.x = -PI/2; w.position.set(x, 1.4, zc0); g.add(w); } }
+    if (!space) { for (const [x, len, zc0] of [[s*48, 560, 0], [s*(LX + 15), 480, 130], [s*(LX - 15), 480, 130]]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(3.4, len), fo), lance = Math.abs(x) > 60; w.rotation.set(-PI/2, 0, lance ? -Math.sign(x)*TOE : 0); w.position.set(lance ? warp(x, 0, zc0) : x, 1.4, zc0); g.add(w); } }
   }
 
-  /* ---- stern: main engine block, four nozzles, and the command citadel above them ---- */
-  const EB = [[-300, 44, 47, 42, 26, D - 5, -16], [-346, 40, 42, 36, 22, D - 9, -13], [-394, 30, 32, 27, 16, D - 15, -7]];
-  B.add(hullD, loft(EB.map(up))); B.add(navy, loft(EB.map(lo)));
-  for (const z of [-322, -352, -380]) { const k = (z + 300)/-94, w = lerp(47, 32, k) + 1; bx(2*w, 4, 5, armour, 0, 30, z); bx(2*w + 0.6, 0.8, 5.4, orange, 0, 33, z); }
-  for (const [x, y, r] of [[-18, 32, 14], [18, 32, 14], [-17, 8, 8], [17, 8, 8]]) {
+  /* ---- stern: the legs, folded aft. A pelvis block on the centreline; either side of it a hip pivot, an armoured thigh, a knee
+          hinge with its kneecap, a shin, and a foot whose sole is the main engine nozzle with toe plates folded back around it.
+          This is the widest part of the ship (about 145 m). The command citadel rides on the pelvis as chest and head. ---- */
+  const rect = (z, x0, x1, y0, y1) => [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]];
+  B.add(hullD, loft([rect(-298, -25, 25, -14, D - 6), rect(-346, -24, 24, -13, D - 9), rect(-392, -19, 19, -8, D - 15)])); bx(40, 3, 80, navy, 0, -13.5, -340); bx(52, 0.8, 4, orange, 0, 40, -393);
+  for (const z of [-316, -340, -364]) bx(50.6, 30, 2.4, trim, 0, 22, z);
+  const NOZ = [[-11, 31, 10], [11, 31, 10], [-11, 9, 7], [11, 9, 7], [-48, 23, 15.5], [48, 23, 15.5]];
+  for (const s of [-1, 1]) { const cx = s*48;
+    hinge(cx, 22, -302, 23, 47);                                                                                       // hip pivot
+    B.add(armour, loft([rect(-308, s*29, s*69, 3, 48), rect(-318, s*28, s*72, 1, 50), rect(-336, s*28, s*72, 1, 50), rect(-342, s*30, s*68, 4, 46)]));     // thigh
+    bx(44.6, 1, 22, orange, cx, 50.2, -327); bx(30, 3, 16, plate, cx, 51, -327); bx(2, 30, 20, plate, s*72.6, 26, -327); bx(2.4, 2, 24, orange, s*72.7, 42, -327);
+    hinge(cx, 22, -352, 16, 43); B.add(plate, loft([ys(38, 15, -340, -364, cx), ys(46, 11, -344, -360, cx)])); bx(22.4, 0.8, 16, orange, cx, 46.3, -352);        // knee and kneecap
+    B.add(hull, loft([rect(-360, s*31, s*67, 3, 47), rect(-368, s*29, s*70, 1, 49), rect(-390, s*30, s*68, 3, 46), rect(-398, s*32, s*64, 6, 41)]));        // shin
+    for (const z of [-374, -384]) bx(40.6, 46, 1.6, hullD, cx, 25, z); bx(2, 26, 18, armour, s*70.4, 26, -379);
+    for (const y of [9, 39]) piston(s*74.2, y, -322, -378, 1.5);
+    B.add(navy, loft([rect(-310, s*31, s*67, -12, 3), rect(-340, s*31, s*67, -12, 4)])); B.add(navy, loft([rect(-362, s*33, s*65, -10, 3), rect(-392, s*34, s*62, -6, 6)])); bx(44.8, 1.6, 30, red, cx, 3.6, -327); bx(41.6, 1.6, 26, red, cx, 3.6, -377);
+    // foot: toe plates folded back over and under the nozzle, each on its own small hinge
+    for (const [y, rx] of [[45.4, 0.1], [2.4, -0.1]]) { bx(28, 2.6, 30, armour, cx, y, -396, 0, rx); bx(28.4, 0.6, 4, orange, cx, y + Math.sign(rx)*1.5, -408, 0, rx); xc(2.8, 30, 10, trim, cx, y - Math.sign(rx)*1.8, -381, true); }
+    for (const o of [-1, 1]) bx(2.4, 30, 26, armour, cx + o*17.6, 24, -398, o*0.1);
+  }
+  for (const [x, y, r] of NOZ) {
     zc(r*0.86, r*1.14, r*1.7, 16, hullD, x, y, -394 - r*0.6); zc(r*1.2, r*1.2, r*0.22, 16, trim, x, y, -394 - r*1.4); zc(r*0.96, r*0.96, 3, 16, armour, x, y, -392);
     B.add(space ? glowM : trim, new THREE.CircleGeometry(r*0.9, 16).rotateY(PI), x, y, -394 - r*1.42);
   }
   if (space) { const pm = basic(0x6fc8ff, {transparent:true, opacity:0.24, depthWrite:false, blending:THREE.AdditiveBlending}), pm2 = basic(0xd8f0ff, {transparent:true, opacity:0.4, depthWrite:false, blending:THREE.AdditiveBlending}), PB = new Batch();
-    for (const [x, y, z, r] of [[-18, 32, -414, 14], [18, 32, -414, 14], [-17, 8, -406, 8], [17, 8, -406, 8], [-LX, 18, -143, 8.6], [LX, 18, -143, 8.6]]) {
-      PB.add(pm, new THREE.ConeGeometry(r*0.86, r*6, 14, 1, true).rotateX(-PI/2), x, y, z - r*3); PB.add(pm2, new THREE.ConeGeometry(r*0.5, r*2.8, 12, 1, true).rotateX(-PI/2), x, y, z - r*1.4); }
+    for (const [x, y, r] of NOZ) { const z = -394 - r*1.42; PB.add(pm, new THREE.ConeGeometry(r*0.86, r*6, 14, 1, true).rotateX(-PI/2), x, y, z - r*3); PB.add(pm2, new THREE.ConeGeometry(r*0.5, r*2.8, 12, 1, true).rotateX(-PI/2), x, y, z - r*1.4); }
     PB.build(g); }
-  // citadel: armoured podium, raked tower, an overhanging bridge with a glazed band, sensor masts
-  B.add(hull, loft([ys(D - 9, 36, -292, -378), ys(D + 14, 31, -297, -372)])); bx(63, 1.2, 76, navy, 0, D + 14.6, -334.5);
-  B.add(armour, loft([ys(D + 15, 22, -302, -364), ys(D + 36, 17, -312, -358)])); for (const s of [-1, 1]) B.add(hullD, loft([ys(D + 15, 5, -316, -350, s*26), ys(D + 30, 3, -322, -346, s*20)]));
-  B.add(hull, loft([ys(D + 36, 20, -306, -360), ys(D + 39, 27, -300, -362), ys(D + 46, 27, -302, -362), ys(D + 50, 19, -311, -357)]));
-  bx(46, 2.2, 0.6, glass, 0, D + 42.6, -300.6, 0, 0.1); for (const s of [-1, 1]) { bx(0.6, 2.2, 54, glass, s*27.1, D + 42.6, -330); bx(12, 1, 10, plate, s*32, D + 39.5, -318); bx(0.8, 0.8, 0.8, s > 0 ? redLamp : lampG, s*38.2, D + 40.4, -318); }
-  bx(54.6, 0.8, 60.6, orange, 0, D + 46.4, -332); bx(26, 5, 28, hullD, 0, D + 52.5, -336); bx(27, 1, 29, navy, 0, D + 55.4, -336);
-  yc(0.9, 1.5, 40, 8, white, -9, D + 75, -344); yc(0.6, 1, 26, 8, white, 10, D + 68, -328); bx(14, 0.8, 0.8, white, -9, D + 84, -344); bx(9, 0.6, 0.6, white, -9, D + 90, -344);
-  B.add(white, new THREE.SphereGeometry(5, 16, 10), 9, D + 60, -346); B.add(white, new THREE.SphereGeometry(3, 12, 8), -18, D + 52, -352); yc(2.2, 2.6, 6, 8, hullD, 0, D + 58, -330, true);
-  bx(1.4, 1.4, 1.4, redLamp, -9, D + 95.6, -344);
-  for (const [x, z] of [[-30, -300], [30, -300], [-30, -368], [30, -368]]) turret(x, D + 14.6, z, z > -330 ? 0 : PI, 1.2);
-  const spin = new THREE.Group(); spin.position.set(0, D + 66, -330); g.add(spin); u.spin = spin;
+  // chest: an armoured podium on the pelvis with a breastplate, two slatted intakes and a collar
+  B.add(hull, loft([ys(D - 9, 33, -292, -378), ys(D + 14, 29, -297, -372)])); bx(59, 1.2, 76, navy, 0, D + 14.6, -334.5);
+  B.add(armour, loft([ys(D + 15, 23, -300, -366), ys(D + 34, 18, -310, -360)])); for (const s of [-1, 1]) { B.add(hullD, loft([ys(D + 15, 5, -316, -350, s*26), ys(D + 30, 3, -322, -346, s*20)]));
+    bx(13, 9, 1.4, trim, s*11, D + 24, -304.4, 0, -0.44); for (let i = 0; i < 4; i++) bx(12, 0.8, 1.8, plate, s*11, D + 20.8 + i*2.2, -303.2 - i*1.05, 0, -0.44); bx(0.8, 0.8, 0.8, s > 0 ? redLamp : lampG, s*30, D + 16, -300); }
+  bx(5, 12, 1.6, orange, 0, D + 24, -304.6, 0, -0.44);
+  yc(15, 17, 3, 10, trim, 0, D + 35.5, -334, true); yc(15.6, 15.6, 0.8, 10, orange, 0, D + 36.6, -334, true); for (const [x, z] of [[-11, -322], [11, -322], [-11, -346], [11, -346]]) { yc(1.1, 1.1, 7, 8, white, x, D + 39, z); yc(1.9, 1.9, 3, 8, hullD, x, D + 37.6, z); }   // collar and lift rams under the head
+  // head: a faceted unit that could ride up on those rams. Visor band across the front, cheek guards, sensor pods as ears, a raked crest
+  B.add(hull, loft([ys(D + 39, 13, -312, -352), ys(D + 43, 17, -306, -356), ys(D + 51, 17, -308, -356), ys(D + 57, 11, -318, -352)]));
+  bx(30, 2.6, 0.7, glass, 0, D + 47.4, -306.9, 0, -0.06); for (const s of [-1, 1]) { bx(0.7, 2.6, 22, glass, s*17.1, D + 47.4, -318); bx(1.6, 9, 20, armour, s*17.6, D + 45.4, -340, 0, 0, s*0.08); bx(8, 5, 2, armour, s*11, D + 42, -306.4, 0, -0.3, s*0.25);
+    xc(4.4, 5, 10, hullD, s*20, D + 47, -338, true); xc(3.4, 1, 10, white, s*22.6, D + 47, -338, true); yc(0.3, 0.5, 14, 6, white, s*20, D + 56, -338); }
+  bx(10, 4.6, 3, hullD, 0, D + 41.2, -308.4, 0, -0.5); bx(34.4, 0.7, 48, orange, 0, D + 51.3, -332);
+  B.add(armour, loft([ys(D + 56, 2.4, -316, -350), ys(D + 68, 0.8, -334, -356)])); B.add(orange, loft([ys(D + 64.6, 1.6, -328.6, -354.3), ys(D + 68.2, 1.2, -334, -356.2)]));
+  yc(0.9, 1.5, 34, 8, white, -9, D + 74, -346); bx(14, 0.8, 0.8, white, -9, D + 82, -346); bx(9, 0.6, 0.6, white, -9, D + 87, -346); bx(1.4, 1.4, 1.4, redLamp, -9, D + 91.6, -346);
+  B.add(white, new THREE.SphereGeometry(4, 14, 8), 10, D + 60, -346); yc(2.2, 2.6, 8, 8, hullD, 0, D + 61, -326, true);
+  for (const [x, z] of [[-27, -300], [27, -300], [-27, -368], [27, -368]]) turret(x, D + 14.6, z, z > -330 ? 0 : PI, 1.2);
+  const spin = new THREE.Group(); spin.position.set(0, D + 70, -326); g.add(spin); u.spin = spin;
   { const SB = new Batch(); SB.add(white, new THREE.BoxGeometry(28, 5, 1.6), 0, 0, 0, 0.12, 0, 0); SB.add(hullD, new THREE.BoxGeometry(26, 3.6, 0.6), 0, 0, 1, 0.12, 0, 0); SB.add(white, new THREE.BoxGeometry(1.8, 6, 1.8), 0, -5, 0); SB.build(spin); }
 
   /* ---- flight deck: plane and markings, lanes, edge lights, island, gun tubs, elevator, blast deflector ---- */
@@ -559,7 +606,7 @@ G.buildCarrier = function(space){
   bx(8, 9, 14, hullD, 38, D + 34.5, 34); bx(9, 1, 15, navy, 38, D + 39.5, 34); yc(0.5, 0.8, 9, 6, white, 35, D + 41.4, 52); yc(0.4, 0.6, 6, 6, white, 41, D + 43, 30); B.add(white, new THREE.SphereGeometry(2.4, 10, 6), 40, D + 33, 54);
   bx(0.4, 6, 8, orange, 29.4, D + 9, 20); bx(0.4, 3, 30, navy, 29.4, D + 13, 45);
   // gun tubs outboard of the deck edge
-  for (const [x, z] of [[57, -236], [57, -120], [57, 110], [57, 244], [-57, -150], [-57, -20], [-57, 110], [-57, 244]]) { const s = Math.sign(x);
+  for (const [x0, z] of [[57, -236], [57, -120], [57, 110], [57, 244], [-57, -150], [-57, -20], [-57, 110], [-57, 244]]) { const s = Math.sign(x0); let x = x0; for (let i = 0; i < 12; i++) x += x0 - warp(x, 0, z);   // pre-compensate the toe-in bend so the tubs stay at the deck edge
     B.add(plate, flat(new THREE.CylinderGeometry(7.5, 5, 6, 8)), x, D - 3.2, z, 0, PI/8, 0); bx(8, 3, 3, hullD, x - s*5, D - 6, z, 0, 0, s*0.6); turret(x, D - 0.2, z, s > 0 ? 0.5 : -0.5, 1.1); }
   // deck-edge elevator on the starboard side, with the hangar opening behind it
   bx(1.5, 22, 34, bayM, -48.6, D - 14, -230); for (const z of [-243, -230, -217]) bx(0.5, 0.6, 6, bayL, -49.5, D - 4, z);
@@ -571,7 +618,7 @@ G.buildCarrier = function(space){
   jbd.add(new THREE.Mesh(new THREE.BoxGeometry(16, 0.8, 7).translate(0, 0.4, -3.5), new THREE.MeshStandardMaterial({color:0x8a8f92, metalness:0.7, roughness:0.5})));
   B.build(g);
   const nm = new THREE.MeshStandardMaterial({color:0xf2f0e8, map:hullNumber(), transparent:true, roughness:0.6, polygonOffset:true, polygonOffsetFactor:-2, depthWrite:false});
-  for (const s of [1, -1]) { const n = new THREE.Mesh(new THREE.PlaneGeometry(36, 18), nm); n.position.set(s*(LX + 14.25), 20, 330); n.rotation.y = s*PI/2; g.add(n); }
+  for (const s of [1, -1]) { const n = new THREE.Mesh(new THREE.PlaneGeometry(36, 18), nm); n.position.set(warp(s*(LX + 15.75), 20, 330), 20, 330); n.rotation.y = s*PI/2 - s*TOE; g.add(n); }
   g.position.set(C.x, 0, C.z);
   return g;
 };

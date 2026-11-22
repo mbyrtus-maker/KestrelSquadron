@@ -51,7 +51,7 @@ addEventListener('contextmenu', e => { if (state === 'mission') e.preventDefault
 
 /* ---------- Game controller (standard-layout gamepads: Xbox, PlayStation, Switch Pro and most others) ----------
    In a sortie:  left stick  jet: fly (bank and pull) · hover/mech: move        right stick  jet: throttle (up/down) and rudder · hover/mech: look and aim
-                 RT guns · LT missiles (mech: shield) · RB afterburner/boost · LB flares · A rise/jump · B descend · X head lasers (mech: missile racks)
+                 RT guns · LT missiles (mech: shield) · RB afterburner/boost · LB flares · A rise/jump (jet: Immelmann) · B descend (jet: split-S) · X head lasers (mech: missile racks; jet: roll right; LS click jet: roll left)
                  Y next mode · LS click blade · RS click designate target · D-pad up camera, down missile type, left wingman attack, right wingman cover
                  Back return to base · Start pause.
    In the hangar and menus: D-pad or left stick moves between buttons, A presses, B closes a window, Start opens the briefing or resumes. */
@@ -420,6 +420,10 @@ const MANUAL = `
       <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Throttle. <kbd>Shift</kbd> afterburner.</dd>
       <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd>Rudder.</dd>
       <dt>Left click</dt><dd>Fixed nose guns.</dd>
+      <dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Barrel roll left / right. Jinks you sideways; roll when a missile is inside 600 m and it usually loses you. 2.5 s recharge.</dd>
+      <dt><kbd>Space</kbd></dt><dd>Immelmann: half loop up and roll upright. Reverses your heading and climbs.</dd>
+      <dt><kbd>C</kbd></dt><dd>Split-S: roll inverted and pull through. Reverses your heading and dives (needs about 400 m of height).</dd>
+      <dt>Dogfighting</dt><dd>The jet is the fighter: air-to-air locks take half the time and reach farther than in hover. Hovering, locks are slow and short-ranged, Varn fighters dive on you in strafing runs, lock you faster, and flares work half as well while you're nearly stationary.</dd>
       <dt>Right click</dt><dd>Missiles. Hold targets in the forward cone to lock. They kill vehicles and light buildings, not heavy ones.</dd>
       <dt><kbd>H</kbd> / middle click</dt><dd>Switch missiles between air-to-air and air-to-ground (jet and hover). Right click fires the selected type (E in mech mode). Hold the trigger and sweep across several targets to lock up to six, then let go to fire one missile at each. Air-to-air missiles lock aircraft only; ground missiles lock everything on the ground, level heavy buildings and break up vehicle groups. Without a lock, ground missiles fly to your aim point.</dd></dl></section>
     <section><h3>Hover</h3><dl>
@@ -446,7 +450,7 @@ const MANUAL = `
       <dt><kbd>G</kbd></dt><dd>Ping the map where you are aiming. Your wingman moves there and engages.</dd>
       <dt><kbd>B</kbd></dt><dd>Form up on me.</dd></dl></section>
     <section><h3>Field repairs</h3><dl>
-      <dt>Repair canisters</dt><dd>Wrecks sometimes leave a canister under a tall green beacon (supply depots, command posts and bosses always do). Fly or walk through it to restore 30% of your hull. It lasts 50 seconds.</dd>
+      <dt>Repair canisters</dt><dd>Wrecks sometimes leave a canister under a tall green beacon (supply depots, command posts and bosses always do). Fly or walk through it to restore 30% of your hull and reload half your missiles, bombs and flares. A dropped one lasts 50 seconds. Every mission also starts with at least two larger supply caches out between you and the fight; when you take one, Bastion drops a fresh cache somewhere else a minute later.</dd>
       <dt>Deck repair</dt><dd>Hover or stand within 600 m of the Bastion and its deck crews patch your hull while you stay.</dd></dl></section>
     <section><h3>Controller</h3><dl>
       <dt>Left stick</dt><dd>Jet: fly (pull back to climb). Hover and mech: move.</dd>
@@ -455,6 +459,7 @@ const MANUAL = `
       <dt>RB / LB</dt><dd>Boost / flares.</dd>
       <dt>A / B</dt><dd>Rise or jump / descend.</dd>
       <dt>X / Y</dt><dd>Head lasers (mech: missile racks) / next mode.</dd>
+      <dt>Jet maneuvers</dt><dd>A: Immelmann. B: split-S. X: barrel roll right. Left stick click: barrel roll left.</dd>
       <dt>Stick clicks</dt><dd>Left: draw the blade. Right: designate target.</dd>
       <dt>D-pad</dt><dd>Up: camera. Down: missile type. Left: wingman attack. Right: wingman cover.</dd>
       <dt>Back / Start</dt><dd>Return to base / pause. In menus, the D-pad moves, A presses, B closes.</dd></dl></section>

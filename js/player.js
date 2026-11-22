@@ -21,7 +21,7 @@ G.Player = class {
     this.mode = 'jet'; this.F.setMode('jet', true);
     this.camPitch = 0; this.camOff = new V3(0, 7, -30); this.aimPoint = new V3(0, 0, 1000); this.aimEnt = null; this.target = null; this.sticky = null;
     this.locks = new Map(); this.lockedList = []; this.tapT = {}; this.dashCd = 0; this.dashT = 0; this.dashDir = new V3(); this.yawRate = 0; this.pitchRate = 0; this.stall = 0; this.aimDir = new V3(0, 0, 1);
-    this.cd = {gun:0, pod:0, mis:0, las:0, mel:0, flare:0, mode:0, bomb:0}; this.gunSide = 0;
+    this.cd = {gun:0, pod:0, mis:0, las:0, mel:0, flare:0, mode:0, bomb:0, man:0}; this.gunSide = 0;
     this.msl = 'air'; this.onGround = false; this.jumpT = 0; this.swing = -1; this.combo = 0; this.chain = false; this.swingDur = 0.46; this.meleeTgt = null; this.meleeCand = null; this.meleeHit = false; this.block = 0; this.walk = 0; this.wpn = 0; this.wpnWant = 0; this.qSwing = false;
     this.shake = 0; this.lockedBy = 0; this.hits = []; this.gh = 0; this.agl = 400; this.pullUp = false; this.gpws = 0; this.gpwsT = 99; this.boost = false;
     this.view = G.save.view || 'cockpit'; this.ray = new THREE.Raycaster(); this.thrusting = false;
@@ -43,7 +43,7 @@ G.Player = class {
       this.speed = Math.max(hs, 85);
       this.pitch = clamp(Math.atan2(this.vel.y, Math.max(hs, 1)), -0.5, 0.5);
       if (this.agl < 25) { this.pitch = Math.max(this.pitch, 0.32); this.pos.y = Math.max(this.pos.y, this.gh + 8); }
-      this.throttle = Math.max(this.throttle, 0.55); this.locks.clear(); this.camPitch = 0; this.yawRate = this.pitchRate = 0; this.rb = 0;
+      this.throttle = Math.max(this.throttle, 0.55); this.locks.clear(); this.camPitch = 0; this.yawRate = this.pitchRate = 0; this.rb = 0; this.man = null; this.manRoll = 0;
     } else {
       if (prev === 'jet') { this.vel.y -= m === 'hover' ? 16 : 6; this.camPitch = clamp(this.pitch*0.6, -0.6, 0.6); }
       if (m === 'mech') { this.onGround = false; this.jumpT = 1; this.airPeak = this.pos.y; this.dropped = true; this.slam = 0; }
@@ -75,16 +75,19 @@ G.Player = class {
     if (this.mode === 'jet') {
       I.dx = I.dy = 0;
       const mx = dz(I.mx, 0.05), my = dz(I.my, 0.05);
-      const turnIn = (mx*0.9 + (K('KeyD') - K('KeyA'))*0.6 + (K('ArrowRight') - K('ArrowLeft'))*0.6)*st.agility;
-      const pitchIn = (my*0.95*st.agility + (K('ArrowUp') - K('ArrowDown'))*0.7)*inv;
+      let turnIn = (mx*0.9 + (K('KeyD') - K('KeyA'))*0.6 + (K('ArrowRight') - K('ArrowLeft'))*0.6)*st.agility;
+      let pitchIn = (my*0.95*st.agility + (K('ArrowUp') - K('ArrowDown'))*0.7)*inv;
       const resp = Math.min(1, dt*2.6);
+      this.maneuverKeys(I, g, zeroG, gh);
+      const MV = this.man; if (MV && MV.k !== 'roll') turnIn = 0;
       this.yawRate += (turnIn - this.yawRate)*resp; this.pitchRate += (pitchIn - this.pitchRate)*resp;
+      if (MV) this.maneuver(MV, dt);
       const auth = clamp((this.speed - 55)/60, 0.35, 1), stall = zeroG ? 0 : clamp((85 - this.speed)/30, 0, 1);
       // Bank-and-pull: sideways input banks hard (up to ~80 deg at the screen edge) and turns; the pitch input acts in the
       // cockpit frame, so pulling while banked tightens the turn toward the low wing instead of climbing.
       // rb is the roll the jet settles to with no stick: 0 upright, pi inverted (after going over the top of a loop)
       this.rb = this.rb || 0;
-      if (Math.abs(this.rb) > 1 && Math.abs(pitchIn) < 0.15) { this.invT = (this.invT || 0) + dt; if (this.invT > 1.2) this.rb = 0; } else this.invT = 0;   // let go while inverted: half-roll upright
+      if (Math.abs(this.rb) > 1 && Math.abs(pitchIn) < 0.15 && !this.man) { this.invT = (this.invT || 0) + dt; if (this.invT > 1.2) this.rb = 0; } else this.invT = 0;   // let go while inverted: half-roll upright
       this.roll += wrap(this.rb + clamp(turnIn*1.45, -1.4, 1.4) - this.roll)*Math.min(1, dt*3.4); this.roll = wrap(this.roll);
       const cr = Math.cos(this.roll), sr = Math.sin(this.roll);
       this.yaw -= (this.yawRate + this.pitchRate*sr*0.9)*auth*dt;
@@ -103,10 +106,10 @@ G.Player = class {
       if (space && zeroG && this.pos.y < gh + clr) { this.pos.y = gh + clr; this.pitch = Math.max(this.pitch, 0.25); if (g.time - (this.floorT || -9) > 3) { this.floorT = g.time; G.hud.flash('EDGE OF THE BATTLE SPACE · CLIMB'); } }
       else if (this.pos.y < gh + clr) {
         const impact = this.speed*Math.max(0.25, -Math.sin(this.pitch));
-        this.damage(impact*4, null, 'crash'); this.pos.y = gh + clr + 1.5; this.pitch = Math.max(this.pitch, 0.3); this.rb = 0; this.shake += 1.2;
+        this.damage(impact*4, null, 'crash'); this.pos.y = gh + clr + 1.5; this.pitch = Math.max(this.pitch, 0.3); this.rb = 0; this.man = null; this.manRoll = 0; this.shake += 1.2;
         G.hud.flash('TERRAIN IMPACT'); g.fx.explosion(this.pos, 0.6);
       }
-      root.position.copy(this.pos); root.rotation.set(-this.pitch, this.yaw, this.roll, 'YXZ');
+      root.position.copy(this.pos); root.rotation.set(-this.pitch, this.yaw, this.roll + (this.manRoll || 0), 'YXZ');
     } else {
       if (I.locked) {
         // Captured mouse: direct mouse-look. The aim point is screen centre.
@@ -444,7 +447,8 @@ G.Player = class {
   }
 
   updateLocks(dt){
-    const gnd = this.msl === 'gnd', w = gnd ? {salvo:1, lock:this.w.bomb.lock} : this.w.missile, f = this.mode === 'jet' ? this.fwd(tA) : tA.copy(this.aimDir), maxN = this.painting ? this.paintMax || 1 : gnd ? 1 : Math.max(w.salvo, 2), range = this.st.radar*0.85, c = [];
+    const gnd = this.msl === 'gnd', w = gnd ? {salvo:1, lock:this.w.bomb.lock} : this.w.missile, f = this.mode === 'jet' ? this.fwd(tA) : tA.copy(this.aimDir), maxN = this.painting ? this.paintMax || 1 : gnd ? 1 : Math.max(w.salvo, 2), range = gnd || this.painting ? this.st.radar*0.85 : this.mode === 'jet' ? this.st.radar*1.06 : Math.min(this.st.radar*0.85, 900), c = [];
+    const lockMul = gnd || this.painting ? 1 : this.mode === 'jet' ? 0.5 : 1.6;   // air-to-air missiles are a fighter's weapon: fast, long locks in jet, slow short ones hovering
     for (const e of this.g.ents) {
       if (!e.alive || e.team !== 'enemy' || e.noLock || (gnd ? e.cls === 'air' : e.cls !== 'air')) continue;   // air-to-air locks aircraft only, air-to-ground everything else
       tB.copy(e.pos); tB.y += e.cy; tB.sub(this.pos); const d = tB.length();
@@ -462,7 +466,7 @@ G.Player = class {
       if ((this.losAt || 0) <= this.g.time) { this.losAt = this.g.time + 0.2; this.losMap = new Map(); }
       if (!this.losMap.has(e)) { tC.copy(e.pos); tC.y += e.cy; this.losMap.set(e, this.g.world.los(this.pos, tC)); }
       const seen = this.losMap.get(e); e.occluded = !seen;
-      this.locks.set(e, seen ? Math.min(1, (this.locks.get(e) || 0) + dt/(w.lock*(this.painting ? 0.35 : 1))) : Math.max(0, (this.locks.get(e) || 0) - dt*1.5));
+      this.locks.set(e, seen ? Math.min(1, (this.locks.get(e) || 0) + dt/(w.lock*lockMul*(this.painting ? 0.35 : 1))) : Math.max(0, (this.locks.get(e) || 0) - dt*1.5));
     }
     this.lockedList = [...this.locks].filter(([, p]) => p >= 1).map(([e]) => e);
   }
@@ -649,11 +653,44 @@ G.Player = class {
     G.hud.flash(hit ? `GROUND STRIKE · ${hit} HIT${killed ? ` · ${killed} DESTROYED` : ''}` : 'GROUND STRIKE');
   }
 
+  /* Jet maneuvers on quick keys: Q / E barrel roll left / right (jinks sideways; timed inside 600 m it shakes off
+     incoming missiles), Space = Immelmann (half loop up, roll upright: reverses heading and climbs), C = split-S
+     (roll inverted, pull through: reverses heading, trades altitude for speed). */
+  maneuverKeys(I, g, zeroG, gh){
+    const want = I.pressed.has('KeyQ') ? ['roll', -1] : I.pressed.has('KeyE') ? ['roll', 1] : I.pressed.has('Space') ? ['imm', 0] : I.pressed.has('KeyC') ? ['splits', 0] : null;
+    if (!want || this.man || g.time - (g.introEndT ?? -9) < 0.6) return;   // the key that skipped the launch cinematic isn't a maneuver
+    if ((this.cd.man || 0) > 0) { G.hud.flash(`MANEUVER RECHARGING · ${this.cd.man.toFixed(1)} s`); return; }
+    const [k, dir] = want;
+    if (k !== 'roll' && this.speed < 110) { G.hud.flash('TOO SLOW TO MANEUVER · OPEN THE THROTTLE'); return; }
+    if (k === 'splits' && !zeroG && this.pos.y - gh < 380) { G.hud.flash('TOO LOW FOR A SPLIT-S · CLIMB'); return; }
+    this.man = {k, dir, t:0, ph:0, rb0:this.rb || 0}; this.cd.man = k === 'roll' ? 2.5 : 4.5; this.invT = 0;
+    if (k === 'roll') {
+      let n = 0; for (const m of g.missiles) if (m.team === 'enemy' && m.target === this && m.pos.distanceTo(this.pos) < 600 && Math.random() < (this.jam ? 0.95 : 0.85)) { m.target = null; n++; }
+      G.hud.flash(n ? `MISSILE${n > 1 ? 'S' : ''} DEFEATED · BARREL ROLL` : `BARREL ROLL ${dir < 0 ? 'LEFT' : 'RIGHT'}`);
+      G.audio.tone(320, 0.3, 'sawtooth', 0.04, 520);
+    } else { G.hud.flash(k === 'imm' ? 'IMMELMANN' : 'SPLIT-S'); G.audio.tone(240, 0.5, 'sawtooth', 0.04, 420); }
+  }
+  maneuver(M, dt){
+    M.t += dt; const fin = () => { this.man = null; this.manRoll = 0; };
+    if (M.k === 'roll') {
+      const dur = 0.75, u = Math.min(1, M.t/dur), e = u*u*(3 - 2*u);
+      this.manRoll = M.dir*Math.PI*2*e;
+      const side = M.dir*110*Math.sin(Math.PI*u);   // sideways jink, ~50 m over the roll
+      this.pos.x += -Math.cos(this.yaw)*side*dt; this.pos.z += Math.sin(this.yaw)*side*dt;
+      if (u >= 1) fin(); return;
+    }
+    if (M.t > 4) { this.rb = 0; return fin(); }
+    if (M.k === 'splits' && M.ph === 0) { this.rb = Math.PI; this.pitchRate = 0; if (M.t > 0.6) { M.ph = 1; M.rb0 = this.rb; } return; }
+    this.pitchRate = 2.3;   // full back stick, held through the half loop
+    const flipped = Math.abs(wrap(this.rb - M.rb0)) > 1;
+    if (flipped && (M.k === 'imm' ? this.pitch < 0.1 : this.pitch > -0.1)) { if (M.k === 'imm') this.rb = 0; this.pitchRate = 0; this.pitch = M.k === 'imm' ? Math.max(this.pitch, 0) : Math.min(this.pitch, 0); fin(); }
+  }
+
   popFlares(){
     if (this.flares <= 0 || this.cd.flare > 0) { if (this.flares <= 0) G.hud.flash('NO FLARES'); return; }
     this.flares--; this.cd.flare = 0.9; const g = this.g, start = g.flares.length; if (this.flares === 3) G.hud.flash('FLARES LOW · 3 LEFT'); else if (this.flares === 0) G.hud.flash('FLARES EXPENDED');
     for (let i = 0; i < 5; i++) g.flares.push({pos:this.pos.clone(), vel:this.vel.clone().multiplyScalar(0.3).add(new V3(rnd()*50, -12 - Math.random()*20, rnd()*50)), life:3.2, alive:true});
-    for (const m of g.missiles) if (m.team === 'enemy' && m.target === this && Math.random() < (this.jam ? 0.9 : 0.75)) m.target = g.flares[start + Math.floor(Math.random()*5)];
+    for (const m of g.missiles) if (m.team === 'enemy' && m.target === this && Math.random() < (this.jam ? 0.9 : 0.75)*(this.vel.length() < 60 ? 0.5 : 1)) m.target = g.flares[start + Math.floor(Math.random()*5)];
     G.audio.flare(); if (G.coop) G.coop.flare(g);
   }
 

@@ -600,7 +600,11 @@ G.updateEnemy = function(game, e, dt){
       if (e.breakT > 0) { e.breakT -= dt; des.copy(e.breakDir); }
       else if (tgt) {
         des.copy(tgt.pos).addScaledVector(tgt.vel, 0.8).sub(e.pos);
-        if (des.length() < 160) { e.breakT = 3.6; e.breakDir = new V3(Math.random() - 0.5, 0.25, Math.random() - 0.5).normalize(); }
+        // A Kestrel that stops to hover is a sitting duck: fighters set up diving strafing runs from above, then zoom
+        // climb away and come round again instead of turning circles in front of its gun.
+        const duck = tgt === P && P.mode !== 'jet' && !P.onGround, dl = des.length();
+        if (duck && dl > 650) des.y += Math.min(260, dl*0.25);
+        if (dl < (duck ? 280 : 160)) { e.breakT = duck ? 3.2 : 3.6; e.breakDir = duck ? new V3(e.dir.x + (Math.random() - 0.5)*0.8, 0.6, e.dir.z + (Math.random() - 0.5)*0.8).normalize() : new V3(Math.random() - 0.5, 0.25, Math.random() - 0.5).normalize(); }
       } else des.set(Math.sin(e.t*0.2), 0, Math.cos(e.t*0.2));
       des.normalize();
       const gh = Math.max(W.height(e.pos.x, e.pos.z), 0);
@@ -636,8 +640,9 @@ G.updateEnemy = function(game, e, dt){
       if (tgt && !e.noFire) {
         const vis = game.sees(e, tgt);
         tmp2.subVectors(tgt.pos, e.pos); const d = tmp2.length(), a = vis ? e.dir.angleTo(tmp2) : 9;
-        if (a < 0.07 && d < 720) { e.burstCd -= dt; if (e.burstCd <= 0) { e.burstCd = 0.13; shoot(game, e, e.pos.clone().addScaledVector(e.dir, 6), tgt, 950, 6.5, {err:6, color:0xff7766, len:5, w:0.4, lead:1}); } }
-        if (a < 0.5 && d > 350 && d < 1700) { e.lockT += dt*(tgt === P && jam ? 0.5 : 1); if (tgt === P) P.lockedBy++; } else e.lockT = Math.max(0, e.lockT - dt);
+        const duck = tgt === P && P.mode !== 'jet' && !P.onGround;
+        if (a < (duck ? 0.1 : 0.07) && d < (duck ? 900 : 720)) { e.burstCd -= dt; if (e.burstCd <= 0) { e.burstCd = 0.13; shoot(game, e, e.pos.clone().addScaledVector(e.dir, 6), tgt, 950, 6.5, {err:6, color:0xff7766, len:5, w:0.4, lead:1}); } }
+        if (a < 0.5 && d > 350 && d < 1700) { e.lockT += dt*(tgt === P && jam ? 0.5 : 1)*(duck ? 1.8 : 1); if (tgt === P) P.lockedBy++; } else e.lockT = Math.max(0, e.lockT - dt);
         if (e.lockT > 2.6 && e.cd <= 0) { game.launchMissile(e.pos.clone().addScaledVector(e.dir, 4), e.dir, tgt, {team:'enemy', speed:spd, max:370, turn:2.1, dmg:150*e.dmgMul, life:10}); e.cd = 13; e.lockT = 0; }
       }
       break;
