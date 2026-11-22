@@ -25,10 +25,14 @@ G.Game = class {
     this.ping = null; this.wave = null; this.aceT = -1; this.center = L.center;
     this.stats = {kills:0, killsMech:0, melee:0, cash:0, xp:0, collat:0, missiles:0, aaside:0, aces:0};
     this.timers = []; this.pickups = []; this.objDone = 0; this.objTotal = m.n; this.time = 0; this.complete = false; this.over = false; this.endT = -1; this.rescue = null;
-    if (L.carrier) { this.world.carrier = G.CARRIER; this.carrierMesh = G.buildCarrier(); this.carrierMesh.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true; }); scene.add(this.carrierMesh); }
+    if (m.space && m.type !== 'training') {   // in orbit the Bastion flies too: sorties launch from its deck, which is solid ground like at sea
+      L.carrier = true; const W = this.world, h0 = W.height.bind(W);
+      W.height = (x, z) => { const cv = W.carrier; if (cv) { const lx = x - cv.x, lz = z - cv.z;
+        if (lx > 29 && lx < 47 && lz > 6 && lz < 74) return cv.deck + 46; if (lx > -49 && lx < 49 && lz > -288 && lz < 304) return Math.max(h0(x, z), cv.deck); } return h0(x, z); }; }
+    if (L.carrier) { this.world.carrier = G.CARRIER; this.carrierMesh = G.buildCarrier(!!m.space); this.carrierMesh.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true; }); scene.add(this.carrierMesh); }
     this.player = new G.Player(this); this.wing = new G.Wingman(this);
     this.marks = [];
-    if (m.space) {   // space sorties start in flight, already in orbit
+    if (m.space && !L.carrier) {   // space sorties without the Bastion start in flight, already in orbit
       const P = this.player, S = m.startAt || {x:0, y:120, z:-5200}; P.pos.set(S.x, S.y, S.z); P.yaw = S.yaw || 0; P.pitch = 0; P.speed = 190; P.vel.set(0, 0, 190); P.throttle = 0.65;
       this.wing.pos.set(S.x - 40, S.y + 6, S.z - 40); this.wing.dir.set(0, 0, 1); }
     if (m.type === 'training') { this.training = new G.Training(this); } else G.spawnMission(this, L);

@@ -65,7 +65,7 @@ G.Player = class {
 
     if (this.mode !== 'jet' && g.world.pushOut(this.pos, 4.5, this.pos.y - G.CLEAR[this.mode])) { this.vel.x *= 0.5; this.vel.z *= 0.5; }
     const h = g.world.height(this.pos.x, this.pos.z);
-    const space = g.world.space, zeroG = this.zeroG = space && !(G.inStation && G.inStation(this.pos));   // space: no sea level; outside the station's hangar, no gravity
+    const space = g.world.space, cv = g.world.carrier, onDeck = cv && Math.abs(this.pos.x - cv.x) < 49 && this.pos.z - cv.z > -288 && this.pos.z - cv.z < 304 && this.pos.y < cv.deck + 40, zeroG = this.zeroG = space && !onDeck && !(G.inStation && G.inStation(this.pos));   // space: no sea level; outside the station's hangar, no gravity
     const gh = this.gh = space ? h : this.mode === 'mech' ? Math.max(h, -3) : Math.max(h, 0.4);
     const clr = G.CLEAR[this.mode]; this.agl = this.pos.y - gh - clr;
     const inv = G.save.invert ? -1 : 1, F = this.F, root = F.root;

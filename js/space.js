@@ -8,42 +8,58 @@
 const G = window.G, V3 = THREE.Vector3;
 const SV = new V3(), SV2 = new V3(), SV3 = new V3();
 
-/* The station: a hub box with a hollow hangar inside. Its mouth opens on the -z face (toward where pilots arrive).
-   Cavity: x and z within hw/hd of the centre, y from the floor (cy - hh) to the ceiling (cy + hh). Walls are t thick.
-   The deck sits at y = 2 so walkers treat it as dry land (and the open space around it, at -900, as somewhere they cannot step). */
-const ST = G.STATION = {x:0, y:62, z:1400, hw:240, hh:60, hd:240, t:22, mw:80, mh:64};
+/* The station: a hexagonal hub with a hollow hangar inside. Seen from above the hub is a regular hexagon with flat faces
+   toward ±z; its mouth opens in the -z face (toward where pilots arrive). hd (= hw) is the cavity's apothem: the distance
+   from the centre to each of the six inner walls. Walls, floor slab and roof are t thick. The cavity runs from the floor
+   (cy - hh) to the ceiling (cy + hh). The deck sits at y = 2 so walkers treat it as dry land (and the open space around it,
+   at -900, as somewhere they cannot step). */
+const ST = G.STATION = {x:0, y:62, z:1400, hw:240, hh:60, hd:240, t:22, mw:80, mh:64, hex:true};
 ST.floor = ST.y - ST.hh;
-G.inStation = (p, m = 0) => Math.abs(p.x - ST.x) < ST.hw - m && Math.abs(p.z - ST.z) < ST.hd - m && p.y > ST.floor - 2 && p.y < ST.y + ST.hh - m;
-// Solid parts of the station (walls, roof, floor slab) plus interior pillars. Returns the push-out vector length or 0.
+const HEXN = [0, 1, 2, 3, 4, 5].map(k => [Math.sin(k*Math.PI/3), Math.cos(k*Math.PI/3)]);   // outward normals of the six walls (index 3 is the mouth face)
+// "Hex radius" of a point (station-local x, z): the apothem of the hexagon it lies on. Inside the cavity it is < hd.
+const hexd = G.stationHex = (lx, lz) => Math.max(Math.abs(lz), 0.8660254037844386*Math.abs(lx) + 0.5*Math.abs(lz));
+G.inStation = (p, m = 0) => hexd(p.x - ST.x, p.z - ST.z) < ST.hd - m && p.y > ST.floor - 2 && p.y < ST.y + ST.hh - m;
+// Pull a point back inside the cavity's footprint, m metres clear of the six walls.
+G.stationClamp = (p, m = 0) => {
+  let lx = p.x - ST.x, lz = p.z - ST.z, moved = false; const lim = ST.hd - m;
+  for (let pass = 0; pass < 3; pass++) for (const [nx, nz] of HEXN) { const d = lx*nx + lz*nz - lim; if (d > 1e-6) { lx -= nx*d; lz -= nz*d; moved = true; } }
+  if (moved) { p.x = ST.x + lx; p.z = ST.z + lz; } return moved;
+};
+// Solid parts of the station (six walls, roof, floor slab) plus interior pillars.
 const PILLARS = [[-120, 60], [120, 60], [-120, -80], [120, -80]];   // x, z offsets from the centre; 16 m square, floor to ceiling
 G.stationSolid = (p, r = 0) => {
   if (!G.stationLive) return false;
-  const lx = p.x - ST.x, ly = p.y - ST.y, lz = p.z - ST.z;
-  const ox = ST.hw + ST.t + r, oy = ST.hh + ST.t + r, oz = ST.hd + ST.t + r;
-  if (Math.abs(lx) > ox || Math.abs(ly) > oy || Math.abs(lz) > oz) return false;                  // outside the hull
-  const inCav = Math.abs(lx) < ST.hw - r && Math.abs(lz) < ST.hd - r && ly > -ST.hh + r && ly < ST.hh - r;
+  const lx = p.x - ST.x, ly = p.y - ST.y, lz = p.z - ST.z, hx = hexd(lx, lz);
+  if (hx > ST.hd + ST.t + r || Math.abs(ly) > ST.hh + ST.t + r) return false;                       // outside the hull
+  const inCav = hx < ST.hd - r && ly > -ST.hh + r && ly < ST.hh - r;
   const inMouth = lz < 0 && Math.abs(lx) < ST.mw - r && ly > -ST.hh + r && ly < -ST.hh + ST.mh - r;  // the tunnel through the -z wall
   if (inMouth) return false;
   if (inCav) { for (const [px, pz] of PILLARS) if (Math.abs(lx - px) < 8 + r && Math.abs(lz - pz) < 8 + r) return true; return false; }
   return true;
 };
-// Push a point out of the station's solid parts along the shallowest axis; returns true if it moved.
+// Push a point out of the station's solid parts; returns true if it moved.
 G.stationPush = (p, r) => {
   if (!G.stationSolid(p, r)) return false;
-  const lx = p.x - ST.x, ly = p.y - ST.y, lz = p.z - ST.z;
-  // Inside the cavity footprint: we're in a pillar, or poking into the floor/roof/walls from inside.
-  const inside = Math.abs(lx) < ST.hw && Math.abs(lz) < ST.hd && Math.abs(ly) < ST.hh;
-  if (inside) {
-    for (const [px, pz] of PILLARS) { const dx = lx - px, dz = lz - pz;
-      if (Math.abs(dx) < 8 + r && Math.abs(dz) < 8 + r) { const qx = 8 + r - Math.abs(dx), qz = 8 + r - Math.abs(dz); if (qx < qz) p.x += Math.sign(dx || 1)*qx; else p.z += Math.sign(dz || 1)*qz; return true; } }
-    const c = [[ST.hw - r - lx, 'x', -1], [lx + ST.hw - r, 'x', 1], [ST.hh - r - ly, 'y', -1], [ly + ST.hh - r, 'y', 1], [ST.hd - r - lz, 'z', -1], [lz + ST.hd - r, 'z', 1]];
-    let best = null; for (const k of c) if (k[0] < 0 && (!best || k[0] > best[0])) best = k;
-    if (!best) return false; p[best[1]] += best[2]*best[0]; return true;
+  let lx = p.x - ST.x, ly = p.y - ST.y, lz = p.z - ST.z; const A = ST.hd, hx = hexd(lx, lz), my = -ST.hh + ST.mh;
+  const put = () => { p.x = ST.x + lx; p.y = ST.y + ly; p.z = ST.z + lz; return true; };
+  // In the mouth tunnel (or just outside it), brushing its sides, lintel or sill: slide back toward the middle of the opening.
+  if (lz < 0 && hx >= A && Math.abs(lx) < ST.mw && ly > -ST.hh && ly < my) {
+    if (Math.abs(lx) > ST.mw - r) lx = Math.sign(lx)*(ST.mw - r);
+    ly = Math.max(-ST.hh + r, Math.min(my - r, ly)); return put();
   }
-  const ox = ST.hw + ST.t + r, oy = ST.hh + ST.t + r, oz = ST.hd + ST.t + r;
-  const c = [[ox - lx, 'x', 1], [ox + lx, 'x', -1], [oy - ly, 'y', 1], [oy + ly, 'y', -1], [oz - lz, 'z', 1], [oz + lz, 'z', -1]];
-  let best = c[0]; for (const k of c) if (k[0] < best[0]) best = k;
-  p[best[1]] += best[2]*best[0]; return true;
+  // Inside the cavity: we're in a pillar, or poking into the walls, floor or roof from inside.
+  if (hx < A && Math.abs(ly) < ST.hh) {
+    for (const [px, pz] of PILLARS) { const dx = lx - px, dz = lz - pz;
+      if (Math.abs(dx) < 8 + r && Math.abs(dz) < 8 + r) { const qx = 8 + r - Math.abs(dx), qz = 8 + r - Math.abs(dz); if (qx < qz) p.x += Math.sign(dx || 1)*qx; else p.z += Math.sign(dz || 1)*qz; p.y = ST.y + Math.max(-ST.hh + r, Math.min(ST.hh - r, ly)); return true; } }
+    const lim = A - r;   // every wall we are too close to pushes back along its own normal (so corners hold)
+    for (let pass = 0; pass < 3; pass++) for (const [nx, nz] of HEXN) { const d = lx*nx + lz*nz - lim; if (d > 0) { lx -= nx*d; lz -= nz*d; } }
+    ly = Math.max(-ST.hh + r, Math.min(ST.hh - r, ly)); return put();
+  }
+  // Outside (or inside the hull's own thickness): out through the nearest outer face.
+  const o = A + ST.t + r, oy = ST.hh + ST.t + r; let best = oy - ly, bx = 0, by = 1, bz = 0;
+  if (oy + ly < best) { best = oy + ly; by = -1; }
+  for (const [nx, nz] of HEXN) { const d = o - (lx*nx + lz*nz); if (d < best) { best = d; bx = nx; by = 0; bz = nz; } }
+  lx += bx*best; ly += by*best; lz += bz*best; return put();
 };
 
 /* ---------- Space world ---------- */
@@ -211,7 +227,7 @@ G.SpaceWorld = class {
   }
   raw(){ return this.floor; } flatW(){ return 0; } shape(){ return this.floor; }
   // "Ground" is the station's deck inside its footprint, and a far-off floor everywhere else (the edge of the battle space).
-  height(x, z){ if (this.station && G.stationLive && Math.abs(x - ST.x) < ST.hw && Math.abs(z - ST.z) < ST.hd) return ST.floor; return this.floor; }
+  height(x, z){ if (this.station && G.stationLive && hexd(x - ST.x, z - ST.z) < ST.hd) return ST.floor; return this.floor; }
   slope(){ return 0; }
   addBlocker(b){ return b; } roof(){ return -1e9; }
   pushOut(pos, rad){ return G.stationPush(pos, rad); }
@@ -240,154 +256,164 @@ G.SpaceWorld = class {
     const hazM = std({map:hazardTex(), roughness:0.7, metalness:0.2}, 1/6);
     const solarM = std({color:0xffffff, map:solarTex(), emissive:0x081230, roughness:0.25, metalness:0.7}, 1/20);
     const lampM = basic(0xffe6b0), redLamp = this.alarmM = basic(0xff3a2a), cyanM = basic(0x6fe3ff), winM = basic(0xffd9a0), hotM = basic(0xff8a3a), emberM = basic(0xa8481c);
-    const W = ST.hw, H = ST.hh, D = ST.hd, T = ST.t, O = W + T, Y1 = H + T, PI = Math.PI, R = rng(4127);
+    // The hub is a hexagonal prism: A is the cavity's apothem (flat faces toward ±z, the mouth in the -z face), O the outer hull's.
+    const A = ST.hd, H = ST.hh, T = ST.t, O = A + T, Y1 = H + T, PI = Math.PI, R = rng(4127), T30 = Math.tan(PI/6), C30 = Math.cos(PI/6), RO = O/C30, RI = A/C30, LO = 2*O*T30, LI = 2*A*T30;
     const B = new Batch();
     const box = (w, h, d, m, x, y, z, ry = 0, rx = 0, rz = 0) => B.add(m, new THREE.BoxGeometry(w, h, d), x, y, z, rx, ry, rz);
-    const pr = (rt, rb, h, seg, m, x, y, z) => B.add(m, flat(new THREE.CylinderGeometry(rt, rb, h, seg)), x, y, z, 0, PI/seg, 0);         // upright prism / frustum with flat sides facing the axes
+    const pr = (rt, rb, h, seg, m, x, y, z) => B.add(m, flat(new THREE.CylinderGeometry(rt, rb, h, seg)), x, y, z, 0, PI/seg, 0);         // upright prism / frustum with a flat side facing ±z
+    const band = (r, h, seg, m, x, y, z) => B.add(m, new THREE.CylinderGeometry(r, r, h, seg, 1, true), x, y, z, 0, PI/seg, 0);
     const tube = (r, len, m, x, y, z, ax, seg = 14) => B.add(m, new THREE.CylinderGeometry(r, r, len, seg), x, y, z, ax === 'z' ? PI/2 : 0, 0, ax === 'x' ? PI/2 : 0);
     const disc = (r, m, x, y, z, rx, ry = 0) => B.add(m, new THREE.CircleGeometry(r, 24), x, y, z, rx, ry, 0);
+    // face frame: b is the face's outward bearing (0 = +z, PI = the mouth face), r the distance out from the centre, t the offset along the face
+    const rp = (b, r, t) => [Math.sin(b)*r + Math.cos(b)*t, Math.cos(b)*r - Math.sin(b)*t];
+    const rbox = (w, h, d, m, b, r, t, y, rx = 0) => { const [x, z] = rp(b, r, t); box(w, h, d, m, x, y, z, b, rx); };
+    const fp = (b, t, y, r) => { const [x, z] = rp(b, r, t); return [x, y, z]; };
+    const FACES = [0, 1, 2, 3, 4, 5].map(k => k*PI/3), VERTS = FACES.map(b => b + PI/6), FRONT = 3;
 
-    /* ---- the hull box: floor slab, roof, sides, back, and the front wall in three pieces around the mouth (the collision contract) ---- */
-    box(2*O, T, 2*O, plateM, 0, -H - T/2, 0); box(2*O, T, 2*O, plateM, 0, H + T/2, 0);
-    box(T, 2*H, 2*O, hullM, -W - T/2, 0, 0); box(T, 2*H, 2*O, hullM, W + T/2, 0, 0); box(2*W, 2*H, T, hullM, 0, 0, D + T/2);
-    box(W - ST.mw, 2*H, T, hullM, -(W + ST.mw)/2, 0, -D - T/2); box(W - ST.mw, 2*H, T, hullM, (W + ST.mw)/2, 0, -D - T/2);
-    box(2*ST.mw, 2*H - ST.mh, T, hullM, 0, -H + ST.mh + (2*H - ST.mh)/2, -D - T/2);
+    /* ---- the hull: hexagonal floor slab and roof, six walls, the front one in three pieces around the mouth (the collision contract) ---- */
+    pr(RO, RO, T, 6, plateM, 0, -H - T/2, 0); pr(RO, RO, T, 6, plateM, 0, H + T/2, 0);
+    FACES.forEach((b, k) => { if (k !== FRONT) rbox(LO, 2*H, T, hullM, b, A + T/2, 0, 0); });
+    for (const s of [-1, 1]) box(LO/2 - ST.mw, 2*H, T, hullM, s*(LO/2 + ST.mw)/2, 0, -A - T/2);
+    box(2*ST.mw, 2*H - ST.mh, T, hullM, 0, -H + ST.mh + (2*H - ST.mh)/2, -A - T/2);
 
     /* ---- exterior ---- */
-    // heavy edge beams round all twelve edges, buttress ribs, an armour belt with a red line, and window strips between the ribs
-    for (const sy of [-1, 1]) for (const s of [-1, 1]) { box(2*O + 8, 8, 8, trimM, 0, sy*Y1, s*O); box(8, 8, 2*O + 8, trimM, s*O, sy*Y1, 0); }
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(10, 2*Y1, 10, trimM, sx*O, 0, sz*O);
-    for (const s of [-1, 1]) {
-      for (let z = -210; z <= 210; z += 60) { box(5, 2*Y1 - 8, 7, darkM, s*(O + 2), 0, z); if (s > 0) box(5, 2*Y1 - 8, 7, darkM, z, 0, O + 2, PI/2); }
-      box(3, 22, 2*O - 12, darkM, s*(O + 1), 8, 0); box(1, 1.6, 2*O - 12, redM, s*(O + 2.6), 8, 0);
-      for (let z = -180; z <= 180; z += 60) for (const y of [-34, 44]) box(0.8, 2.2, 42, winM, s*(O + 0.5), y, z);
-      for (const x of [150, 250]) box(7, 2*Y1 - 8, 5, darkM, s*x, 0, -O - 2);
-      // a tall Varn-red banner plate each side of the mouth
-      box(38, 100, 1.4, redM, s*200, 12, -O - 0.7); box(42, 4, 2.4, trimM, s*200, 64, -O - 1.2); box(42, 4, 2.4, trimM, s*200, -40, -O - 1.2);
-      for (let k = 0; k < 3; k++) box(22 - k*6, 3, 0.6, trimM, s*200, 40 - k*9, -O - 1.5);
-      box(3, 44, 0.6, trimM, s*200, -8, -O - 1.5);
-      // battered skirt along the foot of the walls (front: clear of the docking arms and the mouth)
-      B.add(darkM, loft([[[s*O, -Y1 - 4, -O], [s*(O + 18), -Y1 - 4, -O], [s*(O + 18), -Y1 + 6, -O], [s*O, -40, -O]], [[s*O, -Y1 - 4, O], [s*(O + 18), -Y1 - 4, O], [s*(O + 18), -Y1 + 6, O], [s*O, -40, O]]]));
-      B.add(darkM, loft([[[s*136, -Y1 - 4, -O], [s*136, -Y1 - 4, -O - 18], [s*136, -Y1 + 6, -O - 18], [s*136, -44, -O]], [[s*O, -Y1 - 4, -O], [s*O, -Y1 - 4, -O - 18], [s*O, -Y1 + 6, -O - 18], [s*O, -44, -O]]]));
-      // tank farm low on each flank
-      for (const z of [-150, 0, 150]) { tube(15, 96, plateM, s*(O + 15), -18, z, 'z', 16); for (const dz of [-48, 48]) B.add(plateM, new THREE.SphereGeometry(15, 16, 8), s*(O + 15), -18, z + dz);
-        for (const dz of [-30, 30]) tube(15.8, 4, trimM, s*(O + 15), -18, z + dz, 'z', 16); box(14, 5, 5, trimM, s*(O + 6), -18, z); }
+    // heavy edge beams and corner posts, buttress ribs, an armour belt with a red line, window strips, and a battered skirt round the foot
+    FACES.forEach((b, k) => {
+      for (const sy of [-1, 1]) rbox(LO + 6, 8, 8, trimM, b, O, 0, sy*Y1);
+      const [vx, vz] = rp(VERTS[k], RO, 0); box(10, 2*Y1, 10, trimM, vx, 0, vz, VERTS[k]);
+      const sk = (t0, t1) => B.add(darkM, loft([t0, t1].map(q => [fp(b, q*O, -Y1 - 4, O), fp(b, q*(O + 18), -Y1 - 4, O + 18), fp(b, q*(O + 18), -Y1 + 6, O + 18), fp(b, q*O, -42, O)])));
+      if (k === FRONT) { sk(-T30, -136/O); sk(136/O, T30); return; }
+      sk(-T30, T30);
+      for (const t of [-120, -60, 0, 60, 120]) for (const y of [-34, 44]) rbox(42, 2.2, 0.8, winM, b, O + 0.5, t, y);
+      if (k === 0) return;
+      for (const t of [-90, -30, 30, 90]) rbox(7, 2*Y1 - 8, 5, darkM, b, O + 2, t, 0);
+      rbox(LO - 12, 22, 3, darkM, b, O + 1, 0, 8); rbox(LO - 12, 1.6, 1, redM, b, O + 2.6, 0, 8);
+      if (k === 2 || k === 4) {   // a tall Varn-red banner plate on the two faces flanking the mouth
+        rbox(38, 100, 1.4, redM, b, O + 3.2, 0, 12); for (const y of [64, -40]) rbox(42, 4, 2.4, trimM, b, O + 3.6, 0, y);
+        for (let i = 0; i < 3; i++) rbox(22 - i*6, 3, 0.6, trimM, b, O + 4, 0, 40 - i*9); rbox(3, 44, 0.6, trimM, b, O + 4, 0, -8);
+      } else for (const t of [-70, 70]) {   // tank farm on the two rear flanks
+        const at = (dr, dt) => rp(b, O + dr, t + dt); let q = at(15, 0); B.add(plateM, new THREE.CylinderGeometry(15, 15, 96, 16), q[0], -18, q[1], 0, b, PI/2);
+        for (const dt of [-48, 48]) { q = at(15, dt); B.add(plateM, new THREE.SphereGeometry(15, 16, 8), q[0], -18, q[1]); }
+        for (const dt of [-30, 30]) { q = at(15, dt); B.add(trimM, new THREE.CylinderGeometry(15.8, 15.8, 4, 16), q[0], -18, q[1], 0, b, PI/2); } rbox(5, 5, 14, trimM, b, O + 6, t, -18); }
+    });
+    for (const s of [-1, 1]) {   // the mouth face: ribs and a narrower banner each side of the portal
+      for (const x of [99, 145]) box(6, 2*Y1 - 8, 5, darkM, s*x, 0, -O - 2);
+      box(32, 86, 1.4, redM, s*122, 17, -O - 0.7); for (const y of [62, -28]) box(36, 4, 2.4, trimM, s*122, y, -O - 1.2);
+      for (let i = 0; i < 3; i++) box(20 - i*5, 3, 0.6, trimM, s*122, 44 - i*8, -O - 1.5); box(3, 38, 0.6, trimM, s*122, 2, -O - 1.5);
     }
-    box(3, 22, 2*O - 12, darkM, 0, 8, O + 1, PI/2); box(1, 1.6, 2*O - 12, redM, 0, 8, O + 2.6, PI/2);
-    B.add(darkM, loft([[[-O, -Y1 - 4, O], [-O, -Y1 - 4, O + 18], [-O, -Y1 + 6, O + 18], [-O, -40, O]], [[O, -Y1 - 4, O], [O, -Y1 - 4, O + 18], [O, -Y1 + 6, O + 18], [O, -40, O]]]));
-    for (let x = -180; x <= 180; x += 60) box(42, 2.2, 0.8, winM, x, 46, O + 0.5);
     // three reactor exhaust vents on the back wall
-    for (const x of [-150, 0, 150]) { B.add(trimM, flat(new THREE.CylinderGeometry(34, 40, 14, 12)), x, -22, O + 7, PI/2, 0, 0); disc(29, emberM, x, -22, O + 14.2, 0, 0);
-      for (let k = -2; k <= 2; k++) box(Math.sqrt(29*29 - k*k*100)*2, 2.4, 2, trimM, x, -22 + k*10, O + 14.6); B.add(hotM, new THREE.TorusGeometry(31, 0.8, 6, 32), x, -22, O + 14.3); }
+    for (const x of [-92, 0, 92]) { B.add(trimM, flat(new THREE.CylinderGeometry(34, 40, 14, 12)), x, -22, O + 7, PI/2, 0, 0); disc(29, emberM, x, -22, O + 14.2, 0, 0);
+      for (let i = -2; i <= 2; i++) box(Math.sqrt(29*29 - i*i*100)*2, 2.4, 2, trimM, x, -22 + i*10, O + 14.6); B.add(hotM, new THREE.TorusGeometry(31, 0.8, 6, 32), x, -22, O + 14.3); }
 
-    // roof: a stepped octagonal citadel with a command tower, radiator bank, mast and dish; corner pads for the defence turrets
-    pr(160, 176, 12, 8, plateM, 0, Y1 + 6, 0); pr(112, 112, 20, 8, hullM, 0, Y1 + 22, 30); pr(104, 112, 4, 8, trimM, 0, Y1 + 34, 30);
-    B.add(winM, new THREE.CylinderGeometry(112.4, 112.4, 1.6, 8, 1, true), 0, Y1 + 24, 30, 0, PI/8, 0);
-    pr(54, 60, 44, 8, hullM, 0, Y1 + 58, 30); pr(66, 54, 6, 8, darkM, 0, Y1 + 83, 30); pr(66, 66, 10, 8, hullM, 0, Y1 + 91, 30); pr(40, 66, 8, 8, darkM, 0, Y1 + 100, 30);
-    B.add(winM, new THREE.CylinderGeometry(66.4, 66.4, 2, 8, 1, true), 0, Y1 + 92, 30, 0, PI/8, 0); B.add(redM, flat(new THREE.CylinderGeometry(56.6, 57.1, 3, 8)), 0, Y1 + 62, 30, 0, PI/8, 0);
-    for (let k = 0; k < 4; k++) { const a = PI/4 + k*PI/2; box(8, 50, 26, darkM, Math.sin(a)*62, Y1 + 59, 30 + Math.cos(a)*62, a); }   // tower buttresses
-    for (let k = 0; k < 7; k++) { box(2, 24, 56, darkM, -48 + k*16, Y1 + 24, -118); box(2.4, 1, 56, hotM, -48 + k*16, Y1 + 36.2, -118); }
-    box(112, 4, 60, trimM, 0, Y1 + 13, -118);
+    // roof: a stepped hexagonal citadel with a command tower, radiator bank, mast and dome; a pad at each corner (four carry the defence turrets)
+    pr(170, 190, 12, 6, plateM, 0, Y1 + 6, 0); pr(118, 118, 20, 6, hullM, 0, Y1 + 22, 30); pr(108, 118, 4, 6, trimM, 0, Y1 + 34, 30); band(118.4, 1.6, 6, winM, 0, Y1 + 24, 30);
+    pr(56, 62, 44, 6, hullM, 0, Y1 + 58, 30); pr(68, 56, 6, 6, darkM, 0, Y1 + 83, 30); pr(68, 68, 10, 6, hullM, 0, Y1 + 91, 30); pr(42, 68, 8, 6, darkM, 0, Y1 + 100, 30);
+    band(68.4, 2, 6, winM, 0, Y1 + 92, 30); B.add(redM, flat(new THREE.CylinderGeometry(58.6, 59, 3, 6)), 0, Y1 + 62, 30, 0, PI/6, 0);
+    for (const a of VERTS) box(8, 50, 26, darkM, Math.sin(a)*62, Y1 + 59, 30 + Math.cos(a)*62, a);   // tower buttresses
+    for (let i = 0; i < 7; i++) { box(2, 24, 56, darkM, -48 + i*16, Y1 + 24, -112); box(2.4, 1, 56, hotM, -48 + i*16, Y1 + 36.2, -112); }
+    box(112, 4, 60, trimM, 0, Y1 + 13, -112);
     box(6, 208, 6, trimM, 0, Y1 + 136, 120); for (let y = 60; y < 240; y += 36) box(14, 2, 14, darkM, 0, Y1 + y, 120);
     for (const s of [-1, 1]) box(1.2, 150, 1.2, trimM, s*14, Y1 + 100, 120, 0, 0, s*0.09);
     box(40, 3, 40, darkM, 0, Y1 + 240, 120); B.add(plateM, new THREE.SphereGeometry(30, 20, 10, 0, PI*2, 0, PI/2.5), 0, Y1 + 232, 120);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { box(46, 0.6, 46, trimM, sx*200, Y1 + 0.3, sz*200); for (const a of [-1, 1]) for (const b of [-1, 1]) box(5, 1.2, 5, redM, sx*200 + a*24, Y1 + 0.6, sz*200 + b*24); }
-    for (let i = 0; i < 220; i++) { const x = (R() - 0.5)*480, z = (R() - 0.5)*480, w = 8 + R()*22, d = 8 + R()*22, h = 2 + R()*R()*14;
-      if (Math.hypot(x, z) < 190 + Math.max(w, d) || (Math.abs(Math.abs(x) - 200) < 34 + w/2 && Math.abs(Math.abs(z) - 200) < 34 + d/2)) continue;
+    const pads = VERTS.map(a => [Math.sin(a)*235, Math.cos(a)*235, a]);
+    for (const [x, z, a] of pads) { box(46, 0.6, 46, trimM, x, Y1 + 0.3, z, a); for (const i of [-1, 1]) for (const j of [-1, 1]) { box(5, 1.2, 5, redM, x + Math.cos(a)*i*24 + Math.sin(a)*j*24, Y1 + 0.6, z - Math.sin(a)*i*24 + Math.cos(a)*j*24, a); } }
+    for (let i = 0; i < 260; i++) { const x = (R() - 0.5)*560, z = (R() - 0.5)*500, w = 8 + R()*22, d = 8 + R()*22, h = 2 + R()*R()*14, m = Math.max(w, d)/2, hx = G.stationHex(x, z);
+      if (hx < 172 + m || hx > 252 - m || pads.some(([px, pz]) => Math.hypot(px - x, pz - z) < 36 + m)) continue;
       box(w, h, d, R() < 0.5 ? plateM : darkM, x, Y1 + h/2, z); if (R() < 0.35) box(w*0.5, 1.6, d*0.5, trimM, x, Y1 + h + 0.8, z); }
 
-    // belly: an inverted stepped keel down to the reactor bulb and a long spike, with four radiator vanes
-    pr(236, 168, 26, 8, darkM, 0, -Y1 - 13, 0); pr(128, 100, 34, 8, plateM, 0, -Y1 - 43, 0); pr(70, 70, 40, 8, trimM, 0, -Y1 - 80, 0); pr(60, 22, 50, 8, darkM, 0, -Y1 - 125, 0);
-    B.add(trimM, new THREE.CylinderGeometry(8, 1, 120, 8), 0, -Y1 - 210, 0); B.add(hotM, new THREE.CylinderGeometry(129, 129, 1.6, 8, 1, true), 0, -Y1 - 28, 0, 0, PI/8, 0);
-    for (let k = 0; k < 8; k++) { const a = k*PI/4; box(3, 30, 1, hotM, Math.sin(a)*64.9, -Y1 - 80, Math.cos(a)*64.9, a); }
-    for (let k = 0; k < 4; k++) { const a = PI/4 + k*PI/2; box(3, 64, 120, darkM, Math.sin(a)*150, -Y1 - 58, Math.cos(a)*150, a); box(3.6, 1.4, 120, hotM, Math.sin(a)*150, -Y1 - 90.5, Math.cos(a)*150, a); }
+    // belly: an inverted stepped keel down to the reactor bulb and a long spike, with six radiator vanes
+    pr(290, 190, 26, 6, darkM, 0, -Y1 - 13, 0); pr(140, 108, 34, 6, plateM, 0, -Y1 - 43, 0); pr(74, 74, 40, 6, trimM, 0, -Y1 - 80, 0); pr(62, 22, 50, 6, darkM, 0, -Y1 - 125, 0);
+    B.add(trimM, new THREE.CylinderGeometry(8, 1, 120, 8), 0, -Y1 - 210, 0); band(141, 1.6, 6, hotM, 0, -Y1 - 28, 0);
+    for (const b of FACES) rbox(3, 30, 1, hotM, b, 64.4, 0, -Y1 - 80);
+    for (const a of VERTS) { rbox(3, 64, 120, darkM, a, 160, 0, -Y1 - 58); rbox(3.6, 1.4, 120, hotM, a, 160, 0, -Y1 - 90.5); }
 
-    // the outer ring: a flat octagonal band (deck at +22 for the ring turrets, underside clear of the mouth approach) on four truss spokes
-    const rp = (b, r, t) => [Math.sin(b)*r + Math.cos(b)*t, Math.cos(b)*r - Math.sin(b)*t], sc = 1/Math.cos(PI/8);
-    const rsec = [[500, 4], [540, 4], [546, 9], [546, 17], [540, 22], [500, 22], [494, 17], [494, 9]];
-    B.add(hullM, loft(Array.from({length:8}, (_, k) => { const a = PI/8 + k*PI/4; return rsec.map(([r, y]) => [Math.sin(a)*r*sc, y, Math.cos(a)*r*sc]); }), true));
-    const rbox = (w, h, d, m, b, r, t, y) => { const [x, z] = rp(b, r, t); box(w, h, d, m, x, y, z, b); };
-    for (let k = 0; k < 8; k++) { const b = k*PI/4, diag = k % 2 === 1;
-      for (let t = -160; t <= 160; t += 80) rbox(56, 1.6, 0.8, winM, b, 546.3, t, 13);
-      for (const t of [-110, 0, 110]) rbox(50, 1.4, 0.8, winM, b, 493.7, t, 13);
-      rbox(8, 2, 48, trimM, b, 520, -205, 22.6); rbox(8, 2, 48, trimM, b, 520, 205, 22.6);
-      for (const t of [-120, 120]) { rbox(54, 7, 28, plateM, b, 520, t, 25.5); rbox(40, 2, 18, darkM, b, 520, t, 30); }
-      if (diag) { rbox(96, 15, 16, hullM, b, 553, 0, 13); rbox(100, 3, 18, redM, b, 553, 0, 13); rbox(70, 9, 30, plateM, b, 520, 0, 26.5); rbox(74, 2, 12, redM, b, 520, 0, 31.5); }
-      else { rbox(38, 0.6, 38, trimM, b, 520, 0, 22.3); for (const t of [-120, 120]) { const [x, z] = rp(b, 556, t); B.add(plateM, new THREE.CylinderGeometry(7, 7, 60, 12), x, 13, z, 0, b, PI/2); rbox(4, 12, 8, trimM, b, 549, t, 13); } }
-      if (k !== 4) rbox(130, 5, 22, darkM, b, 520, 0, 1.5);
-      const a = PI/8 + k*PI/4, vr = 520*sc; B.add(darkM, flat(new THREE.CylinderGeometry(32, 32, 24, 8)), Math.sin(a)*vr, 13, Math.cos(a)*vr, 0, a + PI/8, 0);
-      box(1.6, 46, 1.6, trimM, Math.sin(a)*vr, 48, Math.cos(a)*vr); box(12, 1.2, 12, redM, Math.sin(a)*vr, 25.6, Math.cos(a)*vr, a);
-      if (diag) { rbox(14, 11, 136, darkM, b, 430, 0, 12); }
-    }
-    for (let k = 0; k < 4; k++) { const b = PI/4 + k*PI/2; for (const [y0, y1] of [[80, 22], [-78, 6]]) { const len = Math.hypot(134, y1 - y0), [x, z] = rp(b, 433, 0); box(3, 3, len, trimM, x, (y0 + y1)/2, z, b, Math.atan2(y0 - y1, 134)); }
-      for (const t of [-5, 5]) { const [x, z] = rp(b, 430, t); B.add(plateM, new THREE.CylinderGeometry(1.6, 1.6, 136, 8), x, 19, z, PI/2, b, 0); } }
-    // solar wings on booms off the ring, each pair of panels canted up in a shallow V
-    for (const s of [-1, 1]) { box(440, 5, 5, trimM, s*766, 13, 0); box(10, 10, 10, darkM, s*986, 13, 0);
-      for (let k = 0; k < 4; k++) for (const q of [-1, 1]) { const x = s*(622 + k*96), ang = -q*0.2, y = 13 + 64*Math.sin(0.2), z = q*64*Math.cos(0.2);
+    // the outer ring: a flat hexagonal band (deck at +22 for the ring turrets, underside clear of the mouth approach) on six truss spokes
+    const sc = 1/C30, rsec = [[500, 4], [540, 4], [546, 9], [546, 17], [540, 22], [500, 22], [494, 17], [494, 9]], vr = 520*sc;
+    B.add(hullM, loft(VERTS.map(a => rsec.map(([r, y]) => [Math.sin(a)*r*sc, y, Math.cos(a)*r*sc])), true));
+    FACES.forEach((b, k) => {
+      for (let t = -240; t <= 240; t += 80) rbox(56, 1.6, 0.8, winM, b, 546.3, t, 13);
+      for (let t = -220; t <= 220; t += 110) rbox(50, 1.4, 0.8, winM, b, 493.7, t, 13);
+      rbox(38, 0.6, 38, trimM, b, 520, 0, 22.3);
+      for (const s of [-1, 1]) { rbox(8, 2, 48, trimM, b, 520, s*262, 22.6); rbox(54, 7, 28, plateM, b, 520, s*205, 25.5); rbox(40, 2, 18, darkM, b, 520, s*205, 30);
+        if (k % 2) { rbox(96, 15, 16, hullM, b, 553, s*110, 13); rbox(100, 3, 18, redM, b, 553, s*110, 13); rbox(70, 9, 30, plateM, b, 520, s*100, 26.5); rbox(74, 2, 12, redM, b, 520, s*100, 31.5); }
+        else { const [x, z] = rp(b, 556, s*120); B.add(plateM, new THREE.CylinderGeometry(7, 7, 60, 12), x, 13, z, 0, b, PI/2); rbox(8, 12, 4, trimM, b, 549, s*120, 13); rbox(50, 6, 26, plateM, b, 520, s*100, 25); } }
+      if (k !== FRONT) rbox(150, 5, 22, darkM, b, 520, 0, 1.5);
+      const a = VERTS[k], [x, z] = rp(a, vr, 0); B.add(darkM, flat(new THREE.CylinderGeometry(34, 34, 24, 6)), x, 13, z, 0, a, 0);
+      box(1.6, 46, 1.6, trimM, x, 48, z); box(12, 1.2, 12, redM, x, 25.6, z, a);
+      // spoke from the hub's corner to the ring's corner: a box beam, two pipes, and stays above and below
+      rbox(14, 11, 266, darkM, a, 436, 0, 12);
+      for (const t of [-5, 5]) { const q = rp(a, 436, t); B.add(plateM, new THREE.CylinderGeometry(1.6, 1.6, 266, 8), q[0], 19, q[1], PI/2, a, 0); }
+      for (const [y0, y1] of [[80, 22], [-78, 6]]) rbox(3, 3, Math.hypot(264, y1 - y0), trimM, a, 436, 0, (y0 + y1)/2, Math.atan2(y0 - y1, 264));
+    });
+    // solar wings on booms off the ring's two side corners, each pair of panels canted up in a shallow V
+    for (const s of [-1, 1]) { const x0 = vr + 20; box(440, 5, 5, trimM, s*(x0 + 220), 13, 0); box(10, 10, 10, darkM, s*(x0 + 440), 13, 0);
+      for (let i = 0; i < 4; i++) for (const q of [-1, 1]) { const x = s*(x0 + 76 + i*96), ang = -q*0.2, y = 13 + 64*Math.sin(0.2), z = q*64*Math.cos(0.2);
         box(84, 0.8, 104, solarM, x, y, z, 0, ang); for (const e of [-42, 42]) box(2, 1.6, 106, trimM, x + e, y, z, 0, ang); box(86, 1.6, 2, trimM, x, 13 + 116*Math.sin(0.2), q*116*Math.cos(0.2), 0, ang); } }
 
     // hangar mouth: a massive dark portal with a red inner lip, hazard lintel, lamp columns and lit docking arms
     const mw = ST.mw, mh = ST.mh, my = -H + mh;
     for (const s of [-1, 1]) { box(12, mh + 14, 8, darkM, s*(mw + 6), -H + (mh + 14)/2, -O - 4); box(1.5, mh, 8.6, redM, s*(mw + 0.75), -H + mh/2, -O - 4.2);
       for (let y = -H + 6; y < my; y += 8) box(1.6, 3.4, 0.6, lampM, s*(mw + 7), y, -O - 8.2);
-      for (const y of [-H + 20, -H + 44]) box(0.4, 1.6, 16, lampM, s*(mw - 0.1), y, -D - T/2);
+      for (const y of [-H + 20, -H + 44]) box(0.4, 1.6, 16, lampM, s*(mw - 0.1), y, -A - T/2);
       // docking arm: a truss boom with approach lights and a pad at its tip
       box(14, 14, 140, darkM, s*(mw + 40), -H + 20, -O - 70); box(16, 3, 132, trimM, s*(mw + 40), -H + 28, -O - 66); box(20, 20, 6, trimM, s*(mw + 40), -H + 20, -O - 3);
       for (let z = -O - 14; z > -O - 136; z -= 14) box(0.6, 1.2, 3, cyanM, s*(mw + 32.8), -H + 23, z);
-      B.add(redM, flat(new THREE.CylinderGeometry(19, 21, 4, 8)), s*(mw + 40), -H + 29, -O - 135, 0, PI/8, 0); B.add(trimM, flat(new THREE.CylinderGeometry(14, 14, 0.6, 8)), s*(mw + 40), -H + 31.2, -O - 135, 0, PI/8, 0);
- }
+      B.add(redM, flat(new THREE.CylinderGeometry(19, 21, 4, 8)), s*(mw + 40), -H + 29, -O - 135, 0, PI/8, 0); B.add(trimM, flat(new THREE.CylinderGeometry(14, 14, 0.6, 8)), s*(mw + 40), -H + 31.2, -O - 135, 0, PI/8, 0); }
     box(2*mw + 24, 14, 8, darkM, 0, my + 7, -O - 4); box(2*mw + 3, 1.5, 8.6, redM, 0, my + 0.75, -O - 4.2); box(2*mw + 24, 5, 8, darkM, 0, -H - 2.5, -O - 4);
-    box(2*mw - 8, 3.4, 0.5, hazM, 0, my + 9, -O - 8.2); box(2*mw, 0.12, 6, hazM, 0, -H + 0.08, -O - 5); box(2*mw, 0.12, 3, hazM, 0, -H + 0.08, -D - 1.5);
-    for (const x of [-50, 0, 50]) box(14, 0.4, 16, lampM, x, my - 0.1, -D - T/2);
+    box(2*mw - 8, 3.4, 0.5, hazM, 0, my + 9, -O - 8.2); box(2*mw, 0.12, 6, hazM, 0, -H + 0.08, -O - 5); box(2*mw, 0.12, 3, hazM, 0, -H + 0.08, -A - 1.5);
+    for (const x of [-50, 0, 50]) box(14, 0.4, 16, lampM, x, my - 0.1, -A - T/2);
 
     /* ---- interior: lining, deck, structure, lights ---- */
-    box(2*W, 0.5, 2*D, inM, 0, H - 0.3, 0); box(0.5, 2*H, 2*D, inM, -W + 0.3, 0, 0); box(0.5, 2*H, 2*D, inM, W - 0.3, 0, 0); box(2*W, 2*H, 0.5, inM, 0, 0, D - 0.3);
-    box(W - mw, 2*H, 0.5, inM, -(W + mw)/2, 0, -D + 0.3); box(W - mw, 2*H, 0.5, inM, (W + mw)/2, 0, -D + 0.3); box(2*mw, 2*H - mh, 0.5, inM, 0, my + (2*H - mh)/2, -D + 0.3);
-    B.add(floorM, new THREE.PlaneGeometry(2*W, 2*D), 0, -H + 0.05, 0, -PI/2, 0, 0);
+    pr(RI + 0.4, RI + 0.4, 0.5, 6, inM, 0, H - 0.3, 0); B.add(floorM, new THREE.CircleGeometry(RI + 0.4, 6), 0, -H + 0.05, 0, -PI/2, 0, 0);
     const fy = -H + 0.1;
+    FACES.forEach((b, k) => {
+      const [vx, vz] = rp(VERTS[k], RI - 2, 0); box(7, 2*H, 7, darkM, vx, 0, vz, VERTS[k]);   // a post in each corner
+      if (k === FRONT) return;
+      rbox(LI + 1, 2*H, 0.5, inM, b, A - 0.3, 0, 0); rbox(2*(A - 26)*T30, 0.1, 1.2, paintY, b, A - 26, 0, fy);
+      for (const t of (k ? [-90, -30, 30, 90] : [-76, 76])) rbox(6, 2*H, 3, darkM, b, A - 1.6, t, 0);
+      if (!k) return;
+      // bays between the frames: doors, lit panels, warm strips and a red alarm strip above each
+      for (const t of [-116, -60, 0, 60, 116]) { const w = Math.abs(t) > 100 ? 34 : 44;
+        if (Math.abs(t) === 60) { rbox(44, 40, 1.6, darkM, b, A - 0.9, t, -H + 20); rbox(46, 2.4, 1.8, hazM, b, A - 0.9, t, -H + 41.4); rbox(1, 34, 0.5, trimM, b, A - 1.8, t, -H + 18); rbox(10, 1.2, 0.4, lampM, b, A - 1.8, t, -H + 45); }
+        else if (!t) { rbox(40, 26, 1.2, darkM, b, A - 0.8, t, -H + 18); rbox(36, 1.4, 0.4, lampM, b, A - 1.5, t, -H + 34); }
+        rbox(w + 2, 1, 0.4, redLamp, b, A - 0.7, t, 34); rbox(w - 4, 1.4, 0.4, lampM, b, A - 0.7, t, -14); }
+      // a catwalk along each of the four side walls
+      rbox(240, 1.2, 14, darkM, b, A - 8, 0, 10); rbox(240, 0.5, 0.5, trimM, b, A - 14.6, 0, 12.6); rbox(240, 0.9, 0.5, hazM, b, A - 15.1, 0, 10);
+      for (let t = -116; t <= 116; t += 8) rbox(0.4, 2.2, 0.4, trimM, b, A - 14.6, t, 11.6);
+      for (const t of [-90, -30, 30, 90]) rbox(2.4, 4, 14, trimM, b, A - 8, t, 7.6); for (const t of [-60, 0, 60]) rbox(22, 0.3, 1, lampM, b, A - 8, t, 9.3);
+    });
+    for (const s of [-1, 1]) { box(LI/2 - mw + 1, 2*H, 0.5, inM, s*(LI/2 + mw)/2, 0, -A + 0.3); box(6, 2*H, 3, darkM, s*110, 0, -A + 1.6); box(1, mh, 0.6, lampM, s*(mw + 3), -H + mh/2, -A + 0.6);
+      box(1, 0.1, 330, paintY, s*40, fy, -65); for (let z = -216; z < 100; z += 26) box(1.6, 0.26, 4, cyanM, s*43, -H + 0.13, z); }
+    box(2*mw, 2*H - mh, 0.5, inM, 0, my + (2*H - mh)/2, -A + 0.3); box(2*mw + 7, 1, 0.6, lampM, 0, my + 2.5, -A + 0.6);
+    for (const y of [16, 27, 38]) for (const s of [-1, 1]) box(24, 2.6, 0.6, redLamp, s*9.6, y, -A + 0.7, 0, 0, s*0.6);        // "way out" chevrons over the mouth: they flash with the alarm
+    for (let x = -140; x <= 140; x += 40) box(10, 0.3, 2, cyanM, x, -H + 0.25, -A + 30);                                         // landing line by the mouth
+    for (let z = -224; z < 100; z += 26) box(2.5, 0.1, 13, paintW, 0, fy, z);
     // pillars: lit on all four faces, hazard banded, collared, with flared capitals under the roof
     for (const [px, pz] of PILLARS) { box(16, 2*H, 16, plateM, px, 0, pz); box(18.4, 1, 18.4, trimM, px, -H + 0.5, pz); box(16.5, 2.4, 16.5, hazM, px, -H + 3.6, pz);
       for (const y of [-H + 6, -22, 16]) box(17.2, 2, 17.2, darkM, px, y, pz);
       B.add(darkM, flat(new THREE.CylinderGeometry(21, 11.6, 10, 4)), px, H - 5, pz, 0, PI/4, 0);
       box(2, 2*H - 26, 16.4, lampM, px, -4, pz); box(16.4, 2*H - 26, 2, lampM, px, -4, pz);
       box(30, 0.1, 2, hazM, px, fy, pz - 14); box(30, 0.1, 2, hazM, px, fy, pz + 14); box(2, 0.1, 26, hazM, px - 14, fy, pz); box(2, 0.1, 26, hazM, px + 14, fy, pz); }
-    // wall frames, bay doors, light strips and the two catwalks
-    for (const s of [-1, 1]) {
-      for (let z = -210; z <= 210; z += 60) { box(3, 2*H, 6, darkM, s*(W - 1.6), 0, z); if (s > 0 && Math.abs(z) > 80) box(6, 2*H, 3, darkM, z, 0, D - 1.6); }
-      for (let z = -180; z <= 180; z += 60) { const door = Math.abs(z) % 120 === 60;
-        if (door) { box(1.6, 40, 44, darkM, s*(W - 0.9), -H + 20, z); box(1.8, 2.4, 46, hazM, s*(W - 0.9), -H + 41.4, z); box(0.5, 34, 1, trimM, s*(W - 1.8), -H + 18, z); box(0.4, 1.2, 10, lampM, s*(W - 1.8), -H + 45, z); }
-        else { box(1.2, 26, 40, darkM, s*(W - 0.8), -H + 18, z); box(0.4, 1.4, 36, lampM, s*(W - 1.5), -H + 34, z); }
-        box(0.4, 1, 46, redLamp, s*(W - 0.7), 34, z); box(0.4, 1.4, 40, lampM, s*(W - 0.7), -14, z); }
-      box(14, 1.2, 2*D - 40, darkM, s*(W - 8), 10, 0); box(0.5, 0.5, 2*D - 40, trimM, s*(W - 14.6), 12.6, 0); box(0.5, 0.9, 2*D - 40, hazM, s*(W - 15.1), 10, 0);
-      for (let z = -D + 22; z < D - 20; z += 8) box(0.4, 2.2, 0.4, trimM, s*(W - 14.6), 11.6, z);
-      for (let z = -210; z <= 210; z += 60) { box(14, 4, 2.4, trimM, s*(W - 8), 7.6, z, 0, 0, s*0.28); box(1, 0.3, 22, lampM, s*(W - 8), 9.3, z + 30 > 220 ? z - 30 : z + 30); }
-      for (const x of [110, 170, 230]) box(6, 2*H, 3, darkM, s*x, 0, -D + 1.6);
-      box(1, mh, 0.6, lampM, s*(mw + 3), -H + mh/2, -D + 0.6);
-      box(1.2, 0.1, 2*D - 40, paintY, s*(W - 26), fy, 0); box(1, 0.1, 330, paintY, s*40, fy, -65);
-      for (let z = -216; z < 100; z += 26) box(1.6, 0.26, 4, cyanM, s*43, -H + 0.13, z);
-    }
-    box(2*mw + 7, 1, 0.6, lampM, 0, my + 2.5, -D + 0.6);
-    for (const y of [16, 27, 38]) for (const s of [-1, 1]) box(24, 2.6, 0.6, redLamp, s*9.6, y, -D + 0.7, 0, 0, s*0.6);        // "way out" chevrons over the mouth: they flash with the alarm
-    for (let x = -W + 20; x < W; x += 40) box(10, 0.3, 2, cyanM, x, -H + 0.25, -D + 30);                                           // landing line by the mouth
-    for (let z = -224; z < 100; z += 26) box(2.5, 0.1, 13, paintW, 0, fy, z);
-    for (const [x, z] of [[-175, -165], [175, -165], [-180, -8], [180, -8]]) { B.add(paintY, new THREE.RingGeometry(25, 27, 40), x, fy, z, -PI/2, 0, 0); B.add(paintW, new THREE.RingGeometry(9, 10, 28), x, fy, z, -PI/2, 0, 0);
-      for (let k = 0; k < 4; k++) { const a = k*PI/2; box(1.2, 0.1, 12, paintW, x + Math.sin(a)*18, fy, z + Math.cos(a)*18, a); } }
-    // roof structure: girders, lamp housings and a gantry crane on rails
-    for (let z = -210; z <= 210; z += 60) box(2*W, 5, 4, darkM, 0, H - 2.5, z);
-    for (const x of [-180, -60, 60, 180]) { box(4, 3, 2*D, darkM, x, H - 1.5, 0); for (let z = -180; z <= 180; z += 60) { box(36, 2.4, 10, trimM, x, H - 4.2, z); box(30, 0.6, 6, lampM, x, H - 5.6, z); } }
-    for (const s of [-1, 1]) box(3, 3, 2*D - 20, trimM, s*40, H - 7, 0);
+    const PADS = [[-130, -150], [130, -150], [-180, -8], [180, -8]];
+    for (const [x, z] of PADS) { B.add(paintY, new THREE.RingGeometry(25, 27, 40), x, fy, z, -PI/2, 0, 0); B.add(paintW, new THREE.RingGeometry(9, 10, 28), x, fy, z, -PI/2, 0, 0);
+      for (let i = 0; i < 4; i++) { const a = i*PI/2; box(1.2, 0.1, 12, paintW, x + Math.sin(a)*18, fy, z + Math.cos(a)*18, a); } }
+    // roof structure: girders cut to the hexagon, lamp housings and a gantry crane on rails
+    for (let z = -210; z <= 210; z += 60) box(2*(A - 0.5*Math.abs(z))/C30, 5, 4, darkM, 0, H - 2.5, z);
+    for (const x of [-180, -60, 60, 180]) { box(4, 3, 2*Math.min(A, 2*(A - C30*Math.abs(x))), darkM, x, H - 1.5, 0);
+      for (let z = -180; z <= 180; z += 60) if (G.stationHex(x, z) < A - 20) { box(36, 2.4, 10, trimM, x, H - 4.2, z); box(30, 0.6, 6, lampM, x, H - 5.6, z); } }
+    for (const s of [-1, 1]) box(3, 3, 2*A - 20, trimM, s*40, H - 7, 0);
     box(88, 5, 12, darkM, 0, H - 10.5, -40); box(88, 1.6, 12.4, hazM, 0, H - 12.4, -40); box(12, 6, 10, trimM, 16, H - 15, -40); box(0.6, 18, 0.6, trimM, 16, H - 27, -40); box(5, 4, 5, hazM, 16, H - 38, -40);
     // reactor chamber at the back: octagonal steps, a cage of posts and rings, an injector hanging from the roof and conduits into the back wall
-    const rz = D - 70;
+    const rz = A - 70;
     B.add(hazM, new THREE.RingGeometry(50, 54, 48), 0, fy, rz, -PI/2, 0, 0);
-    pr(44, 46, 5, 8, darkM, 0, -H + 2.5, rz); B.add(cyanM, new THREE.CylinderGeometry(39.5, 39.5, 1, 8, 1, true), 0, -H + 5.6, rz, 0, PI/8, 0); pr(36, 39, 7, 8, plateM, 0, -H + 8.5, rz);
+    pr(44, 46, 5, 8, darkM, 0, -H + 2.5, rz); band(39.5, 1, 8, cyanM, 0, -H + 5.6, rz); pr(36, 39, 7, 8, plateM, 0, -H + 8.5, rz);
     pr(8, 14, 4, 8, trimM, 0, -H + 14, rz); disc(7.4, cyanM, 0, -H + 16.1, rz, -PI/2);
-    for (let k = 0; k < 8; k++) { const a = k/8*PI*2, x = Math.sin(a)*34, z = rz + Math.cos(a)*34; box(3, 2*H - 12, 3, darkM, x, 6, z, a); box(0.8, 44, 0.5, redLamp, Math.sin(a)*35.7, 0, rz + Math.cos(a)*35.7, a); box(5, 3, 5, trimM, x, -H + 13.5, z, a); }
+    for (let i = 0; i < 8; i++) { const a = i/8*PI*2, x = Math.sin(a)*34, z = rz + Math.cos(a)*34; box(3, 2*H - 12, 3, darkM, x, 6, z, a); box(0.8, 44, 0.5, redLamp, Math.sin(a)*35.7, 0, rz + Math.cos(a)*35.7, a); box(5, 3, 5, trimM, x, -H + 13.5, z, a); }
     for (const y of [-20, 20, 48]) B.add(darkM, new THREE.TorusGeometry(34, 1.5, 6, 32), 0, y, rz, PI/2, 0, 0);
-    pr(44, 20, 22, 8, darkM, 0, H - 11, rz); pr(12, 12, 8, 8, trimM, 0, H - 26, rz); pr(10, 4, 6, 8, darkM, 0, H - 33, rz); disc(3.8, cyanM, 0, H - 36.1, rz, PI/2); B.add(cyanM, new THREE.CylinderGeometry(12.3, 12.3, 1, 8, 1, true), 0, H - 26, rz, 0, PI/8, 0);
-    for (const s of [-1, 1]) { tube(3, 56, plateM, s*22, H - 6, D - 28, 'z'); box(9, 9, 3, trimM, s*22, H - 6, D - 1.5);
-      box(54, 84, 2, darkM, s*130, -10, D - 1.6); box(44, 1, 0.5, redLamp, s*130, 26, D - 2.8); for (let k = 0; k < 4; k++) box(40, 1.4, 0.5, lampM, s*130, -44 + k*12, D - 2.8); }
-    B.add(trimM, new THREE.TorusGeometry(60, 3, 8, 40), 0, 0, D - 2); disc(58, darkM, 0, 0, D - 1, 0, PI); for (const y of [-18, 0, 18]) box(Math.sqrt(54*54 - y*y)*2, 1.4, 0.5, cyanM, 0, y, D - 1.4);
+    pr(44, 20, 22, 8, darkM, 0, H - 11, rz); pr(12, 12, 8, 8, trimM, 0, H - 26, rz); pr(10, 4, 6, 8, darkM, 0, H - 33, rz); disc(3.8, cyanM, 0, H - 36.1, rz, PI/2); band(12.3, 1, 8, cyanM, 0, H - 26, rz);
+    for (const s of [-1, 1]) { tube(3, 56, plateM, s*22, H - 6, A - 28, 'z'); box(9, 9, 3, trimM, s*22, H - 6, A - 1.5);
+      box(40, 84, 2, darkM, s*108, -10, A - 1.6); box(32, 1, 0.5, redLamp, s*108, 26, A - 2.8); for (let i = 0; i < 4; i++) box(30, 1.4, 0.5, lampM, s*108, -44 + i*12, A - 2.8); }
+    B.add(trimM, new THREE.TorusGeometry(60, 3, 8, 40), 0, 0, A - 2); disc(58, darkM, 0, 0, A - 1, 0, PI); for (const y of [-18, 0, 18]) box(Math.sqrt(54*54 - y*y)*2, 1.4, 0.5, cyanM, 0, y, A - 1.4);
     B.build(g);
 
     // the name over the mouth, bay numbers on the deck, and a faint containment field across the mouth
@@ -398,14 +424,14 @@ G.SpaceWorld = class {
     { const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#c9981c'; x.font = 'bold 110px "Arial Narrow", "Helvetica Neue", Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
       for (let k = 0; k < 4; k++) x.fillText('0' + (k + 1), 64 + k*128, 68);
       const t = canvasTex(c, false), nm = new THREE.MeshStandardMaterial({map:t, transparent:true, alphaTest:0.4, roughness:0.8});
-      [[-175, -165], [175, -165], [-180, -8], [180, -8]].forEach(([x0, z0], k) => { const pg = new THREE.PlaneGeometry(20, 20), uv = pg.attributes.uv; for (let i = 0; i < 4; i++) uv.setX(i, (k + uv.getX(i))/4);
+      PADS.forEach(([x0, z0], k) => { const pg = new THREE.PlaneGeometry(20, 20), uv = pg.attributes.uv; for (let i = 0; i < 4; i++) uv.setX(i, (k + uv.getX(i))/4);
         const m = new THREE.Mesh(pg, nm); m.rotation.set(-PI/2, 0, PI); m.position.set(x0, fy + 0.06, z0 - 38); g.add(m); }); }
     { const c = document.createElement('canvas'); c.width = 256; c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#04080a'; x.fillRect(0, 0, 256, 128);
       for (let j = 0; j < 128; j += 4) { x.fillStyle = 'rgba(90,200,255,0.05)'; x.fillRect(0, j, 256, 1); }
       for (const [x0, y0, x1, y1] of [[0, 0, 26, 0], [256, 0, 230, 0], [0, 0, 0, 22], [0, 128, 0, 106]]) { const gd = x.createLinearGradient(x0, y0, x1, y1); gd.addColorStop(0, 'rgba(90,200,255,0.5)'); gd.addColorStop(1, 'rgba(90,200,255,0)'); x.fillStyle = gd; x.fillRect(0, 0, 256, 128); }
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(2*mw, mh), new THREE.MeshBasicMaterial({map:canvasTex(c, false), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide})); m.position.set(0, -H + mh/2, -D - T/2); g.add(m); }
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(2*mw, mh), new THREE.MeshBasicMaterial({map:canvasTex(c, false), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide})); m.position.set(0, -H + mh/2, -A - T/2); g.add(m); }
     this.beacons = [];
-    for (const [x, y, z] of [[O, Y1, -O], [-O, Y1, -O], [O, Y1, O], [-O, Y1, O], [0, Y1 + 261, 120], [-520, 22, 0], [520, 22, 0], [mw + 40, -H + 31, -O - 135], [-mw - 40, -H + 31, -O - 135], [0, -Y1 - 276, 0], [0, Y1 + 104, 30]]) {
+    for (const [x, y, z] of [...[0, 2, 3, 5].map(k => [Math.sin(VERTS[k])*RO, Y1, Math.cos(VERTS[k])*RO]), [0, Y1 + 261, 120], [-vr, 70, 0], [vr, 70, 0], [mw + 40, -H + 31, -O - 135], [-mw - 40, -H + 31, -O - 135], [0, -Y1 - 276, 0], [0, Y1 + 104, 30]]) {
       const b = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 6), redLamp); b.position.set(x, y + 3, z); g.add(b); this.beacons.push(b); }
     // interior lights: the sun can't reach in, so the hangar has its own
     this.inLights = [];
@@ -545,7 +571,7 @@ G.updateEnemy = function(game, e, dt){
   const r = baseUpdate(game, e, dt);
   if (game.world.space) {
     if (e.inStation && e.alive) {   // station security bots never leave the hangar
-      e.pos.x = Math.max(ST.x - ST.hw + 12, Math.min(ST.x + ST.hw - 12, e.pos.x)); e.pos.z = Math.max(ST.z - ST.hd + 12, Math.min(ST.z + ST.hd - 12, e.pos.z));
+      G.stationClamp(e.pos, 12);
       if (e.pos.y < ST.floor) e.pos.y = ST.floor; G.stationPush(e.pos, e.r*0.6); e.mesh.position.copy(e.pos);
     } else if (e.cls === 'air' && e.alive && !e.part && !e.onStation && G.stationPush(e.pos, e.r)) e.mesh.position.copy(e.pos);
   }
@@ -665,9 +691,10 @@ G.spaceTick = (game, dt) => {
     for (const mi of game.missiles) if (mi.life > 0 && G.stationSolid(mi.pos)) { mi.life = 0; game.fx.explosion(mi.pos.clone(), 0.8); }
   }
   // no deck, no mech: outside the station's hangar the Kestrel switches to hover
-  const inside = G.stationLive && G.inStation(P.pos);
+  const onDeck = who => { const cv = W.carrier; return cv && Math.abs(who.pos.x - cv.x) < 49 && who.pos.z - cv.z > -288 && who.pos.z - cv.z < 304 && who.pos.y < cv.deck + 40 && who.pos.y > cv.deck - 2; };   // the Bastion's deck has gravity plating too
+  const inside = (G.stationLive && G.inStation(P.pos)) || onDeck(P);
   if (P.alive && P.mode === 'mech' && !inside) { P.cd.mode = 0; P.setMode('hover'); G.hud.flash('NO DECK · MECH NEEDS GRAVITY'); }
-  if (game.wing.alive && game.wing.mode === 'mech' && !(G.stationLive && G.inStation(game.wing.pos))) game.wing.setMode('hover');
+  if (game.wing.alive && game.wing.mode === 'mech' && !(G.stationLive && G.inStation(game.wing.pos)) && !onDeck(game.wing)) game.wing.setMode('hover');
   if (game.escape && !game.escape.done) {
     game.escape.t -= dt; const t = game.escape.t;
     if (W.alarmM) W.alarmM.color.setHex(Math.floor(game.time*4) % 2 ? 0xff3a2a : 0x330a08);
@@ -729,11 +756,11 @@ G.spawnMission = function(game, L){
   const r = L.r, tag = (e, i) => { e.tag = 'obj'; e.task = i; return e; };
   for (const T of L.tasks) {
     if (T.kind === 'stationguns') {   // turrets on the roof corners and the ring
-      const spots = [[-200, -200], [200, -200], [-200, 200], [200, 200], [0, -520], [0, 520], [-520, 0], [520, 0]];
+      const spots = [[-117.5, -203.5], [117.5, -203.5], [-117.5, 203.5], [117.5, 203.5], [0, -520], [0, 520], [-450.3, 260], [450.3, -260]];   // roof-corner pads, then the middle of ring sides
       for (let k = 0; k < T.n; k++) { const s = spots[k % spots.length], y = Math.abs(s[0]) > 300 || Math.abs(s[1]) > 300 ? ST.y + 22 : ST.y + ST.hh + ST.t;
         const e = tag(G.spawn(game, k % 3 === 2 ? 'skymis' : 'skyflak', ST.x + s[0], ST.z + s[1], {alt:y}), T.i); e.carrier = {alive:true}; e.onStation = true; e.zone = null; }
     } else if (T.kind === 'bots') {
-      for (let k = 0; k < T.n; k++) { const x = ST.x + (r() - 0.5)*2*(ST.hw - 40), z = ST.z - ST.hd*0.2 + r()*(ST.hd*1.0);
+      for (let k = 0; k < T.n; k++) { const q = {x:ST.x + (r() - 0.5)*2*(ST.hw - 40), z:ST.z - ST.hd*0.2 + r()*(ST.hd*1.0)}; G.stationClamp(q, 30); const x = q.x, z = q.z;
         const e = tag(G.spawn(game, k % 3 === 2 ? 'reaver' : 'mech', x, z, {}), T.i); e.inStation = true; e.pos.y = ST.floor; e.zone = {x:ST.x, z:ST.z}; }
     } else if (T.kind === 'core') {
       const e = tag(G.spawn(game, 'stationcore', ST.x, ST.z + ST.hd - 70, {alt:ST.floor + 40}), T.i); e.pos.y = ST.floor + 40; e.mesh.position.copy(e.pos); e.onStation = true; e.zone = null;
