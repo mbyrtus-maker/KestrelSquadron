@@ -61,13 +61,118 @@ function planetTexture(seed){
   }
   x.putImageData(img, 0, 0); const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
 }
-function hullTexture(base, line, seed){
-  const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d'); let s = seed; const R = () => (s = (s*16807) % 2147483647)/2147483647;
-  x.fillStyle = base; x.fillRect(0, 0, 512, 512);
-  for (let i = 0; i < 160; i++) { { const v = R() < 0.5 ? 0 : 255; x.fillStyle = `rgba(${v},${v},${v},${0.03 + R()*0.06})`; } x.fillRect(R()*512, R()*512, 20 + R()*160, 10 + R()*90); }
-  x.strokeStyle = line; x.lineWidth = 2; for (let k = 0; k < 512; k += 64) { x.beginPath(); x.moveTo(k, 0); x.lineTo(k, 512); x.stroke(); x.beginPath(); x.moveTo(0, k); x.lineTo(512, k); x.stroke(); }
-  for (let i = 0; i < 40; i++) { x.strokeRect(Math.floor(R()*8)*64 + 4, Math.floor(R()*8)*64 + 4, 56, 24 + Math.floor(R()*2)*32); }
-  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+/* ---------- Hull kit: procedural panel textures (colour, normal and lit-window maps), a geometry batcher that merges
+   every part sharing a material into one mesh (with world-scale box-projected UVs), and a flat-shaded loft. ---------- */
+function rng(seed){ let s = seed % 2147483647 || 7; return () => (s = (s*16807) % 2147483647)/2147483647; }
+const TEXC = {};
+function canvasTex(c, rep){ const t = new THREE.CanvasTexture(c); if (rep !== false) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
+function panelSet(key, seed, o = {}){
+  if (TEXC[key]) return TEXC[key];
+  const N = o.size || 1024, R = rng(seed), min = o.min || 56, base = o.base || 176, vary = o.vary === undefined ? 26 : o.vary;
+  const mk = () => { const c = document.createElement('canvas'); c.width = c.height = N; return c; };
+  const ca = mk(), ch = mk(), ce = mk(), a = ca.getContext('2d'), h = ch.getContext('2d'), e = ce.getContext('2d');
+  const gr = v => { v = Math.max(0, Math.min(255, Math.round(v))); return `rgb(${v},${v},${v})`; };
+  a.fillStyle = gr(base*0.5); a.fillRect(0, 0, N, N); h.fillStyle = gr(30); h.fillRect(0, 0, N, N); e.fillStyle = '#000'; e.fillRect(0, 0, N, N);
+  const panels = [];
+  const split = (x, y, w, hh, d) => {
+    if (d > 0 && R() < 0.9) {
+      if (w >= hh && w >= min*2) { const k = Math.max(min, Math.min(w - min, Math.round(w*(0.3 + R()*0.4)/8)*8)); split(x, y, k, hh, d - 1); split(x + k, y, w - k, hh, d - 1); return; }
+      if (hh >= min*2) { const k = Math.max(min, Math.min(hh - min, Math.round(hh*(0.3 + R()*0.4)/8)*8)); split(x, y, w, k, d - 1); split(x, y + k, w, hh - k, d - 1); return; }
+    }
+    panels.push([x, y, w, hh]);
+  };
+  const C = o.cells || 4, cs = N/C; for (let i = 0; i < C; i++) for (let j = 0; j < C; j++) split(i*cs, j*cs, cs, cs, o.depth === undefined ? 3 : o.depth);
+  for (const [x, y, w, hh] of panels) {
+    const v = base + (R() - 0.5)*vary, lvl = 130 + R()*70, t = R(), gp = o.gap || 2;
+    a.fillStyle = gr(v); a.fillRect(x + gp, y + gp, w - 2*gp, hh - 2*gp); h.fillStyle = gr(lvl); h.fillRect(x + gp, y + gp, w - 2*gp, hh - 2*gp);
+    a.fillStyle = 'rgba(255,255,255,0.07)'; a.fillRect(x + gp, y + gp, w - 2*gp, 2); a.fillStyle = 'rgba(0,0,0,0.12)'; a.fillRect(x + gp, y + hh - gp - 3, w - 2*gp, 3);
+    if (o.win && w >= 72 && hh >= 40 && t < o.win) {
+      const rows = Math.min(3, Math.floor((hh - 18)/20));
+      for (let r = 0; r < rows; r++) { const y0 = y + 12 + r*20; if (R() < 0.25) continue;
+        for (let x0 = x + 12; x0 < x + w - 18; x0 += 15) { a.fillStyle = gr(26); a.fillRect(x0 - 1, y0 - 1, 10, 7); h.fillStyle = gr(lvl - 70); h.fillRect(x0 - 1, y0 - 1, 10, 7);
+          if (R() < 0.6) { const c = R(); e.fillStyle = c < 0.7 ? '#ffd9a0' : c < 0.9 ? '#fff2d8' : '#a8d8ff'; e.globalAlpha = 0.55 + R()*0.45; e.fillRect(x0, y0, 8, 5); e.globalAlpha = 1; } } }
+    } else if (t < 0.34) { a.fillStyle = gr(v + 9); a.fillRect(x + 9, y + 9, w - 18, hh - 18); h.fillStyle = gr(lvl + 34); h.fillRect(x + 9, y + 9, w - 18, hh - 18); }
+    else if (t < 0.46 && w > 40 && hh > 30) { for (let yy = y + 10; yy < y + hh - 10; yy += 7) { a.fillStyle = gr(v*0.4); a.fillRect(x + 10, yy, w - 20, 3); h.fillStyle = gr(lvl - 80); h.fillRect(x + 10, yy, w - 20, 3); } }
+    else if (t < 0.53) { a.fillStyle = gr(v*0.6); a.fillRect(x + gp, y + gp, w - 2*gp, hh - 2*gp); }
+    else if (t < 0.62 && o.dots) { for (let yy = y + 10; yy < y + hh - 8; yy += 12) for (let xx = x + 10; xx < x + w - 8; xx += 12) { h.fillStyle = gr(lvl + 50); h.fillRect(xx, yy, 5, 5); a.fillStyle = gr(v + 12); a.fillRect(xx, yy, 5, 5); } }
+    h.fillStyle = gr(lvl + 40); for (const [px, py] of [[x + 6, y + 6], [x + w - 9, y + 6], [x + 6, y + hh - 9], [x + w - 9, y + hh - 9]]) h.fillRect(px, py, 3, 3);
+  }
+  // grime: soft blotches and streaks, drawn wrapped so the tile repeats cleanly
+  const wrap = (fn) => { for (const dx of [0, -N]) for (const dy of [0, -N]) fn(dx, dy); };
+  for (let i = 0; i < 260; i++) { const x = R()*N, y = R()*N, w = 20 + R()*200, hh = 10 + R()*120, c = R() < 0.6 ? 0 : 255, al = 0.02 + R()*0.05; a.fillStyle = `rgba(${c},${c},${c},${al})`; wrap((dx, dy) => a.fillRect(x + dx, y + dy, w, hh)); }
+  for (let i = 0; i < 90; i++) { const x = R()*N, y = R()*N, hh = 40 + R()*220; a.fillStyle = `rgba(0,0,0,${0.04 + R()*0.06})`; wrap((dx, dy) => a.fillRect(x + dx, y + dy, 2 + R()*4, hh)); }
+  // normal map from the height canvas (one 3×3 blur first so panel edges read as small bevels)
+  const hd = h.getImageData(0, 0, N, N).data, H0 = new Float32Array(N*N), H1 = new Float32Array(N*N);
+  for (let i = 0; i < N*N; i++) H0[i] = hd[i*4]/255;
+  for (let j = 0; j < N; j++) { const jm = ((j - 1 + N) % N)*N, j0 = j*N, jp = ((j + 1) % N)*N;
+    for (let i = 0; i < N; i++) { const im = (i - 1 + N) % N, ip = (i + 1) % N; H1[j0 + i] = (H0[jm + im] + H0[jm + i] + H0[jm + ip] + H0[j0 + im] + H0[j0 + i] + H0[j0 + ip] + H0[jp + im] + H0[jp + i] + H0[jp + ip])/9; } }
+  const cn = mk(), nx = cn.getContext('2d'), img = nx.createImageData(N, N), d = img.data, s = o.bump || 2.6;
+  for (let j = 0; j < N; j++) { const jm = ((j - 1 + N) % N)*N, j0 = j*N, jp = ((j + 1) % N)*N;
+    for (let i = 0; i < N; i++) { const im = (i - 1 + N) % N, ip = (i + 1) % N; let x = -(H1[j0 + ip] - H1[j0 + im])*s, y = (H1[jp + i] - H1[jm + i])*s; const l = 1/Math.hypot(x, y, 1), k = (j0 + i)*4;
+      d[k] = (x*l*0.5 + 0.5)*255; d[k + 1] = (y*l*0.5 + 0.5)*255; d[k + 2] = (l*0.5 + 0.5)*255; d[k + 3] = 255; } }
+  nx.putImageData(img, 0, 0);
+  return TEXC[key] = {map:canvasTex(ca), normalMap:canvasTex(cn), emissiveMap:canvasTex(ce)};
+}
+function hazardTex(){
+  if (TEXC.haz) return TEXC.haz;
+  const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); x.fillStyle = '#15161a'; x.fillRect(0, 0, 64, 64); x.fillStyle = '#d8a41c';
+  for (let k = -64; k < 128; k += 32) { x.beginPath(); x.moveTo(k, 64); x.lineTo(k + 16, 64); x.lineTo(k + 80, 0); x.lineTo(k + 64, 0); x.closePath(); x.fill(); }
+  return TEXC.haz = canvasTex(c);
+}
+function solarTex(){
+  if (TEXC.sol) return TEXC.sol;
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#7d8798'; x.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { const gd = x.createLinearGradient(i*32, j*32, i*32 + 32, j*32 + 32); gd.addColorStop(0, '#16296a'); gd.addColorStop(1, '#0a1436'); x.fillStyle = gd; x.fillRect(i*32 + 1.5, j*32 + 1.5, 29, 29);
+    x.fillStyle = 'rgba(140,170,255,0.18)'; x.fillRect(i*32 + 15.5, j*32 + 2, 1, 28); }
+  return TEXC.sol = canvasTex(c);
+}
+const BM = new THREE.Matrix4(), BN = new THREE.Matrix3(), BQ = new THREE.Quaternion(), BE = new THREE.Euler(0, 0, 0, 'YXZ'), BP = new V3(), BS = new V3(1, 1, 1), BV = new V3(), BA = new V3(), BB = new V3();
+const flat = geo => { const g = geo.index ? geo.toNonIndexed() : geo; g.computeVertexNormals(); return g; };
+class Batch {
+  constructor(){ this.map = new Map(); }
+  // rotation order is yaw (ry) after pitch (rx) after roll (rz)
+  add(mat, geo, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0){
+    const gi = geo.index ? geo.toNonIndexed() : geo, P = gi.attributes.position, Nn = gi.attributes.normal;
+    BM.compose(BP.set(x, y, z), BQ.setFromEuler(BE.set(rx, ry, rz, 'YXZ')), BS); BN.getNormalMatrix(BM);
+    let e = this.map.get(mat); if (!e) this.map.set(mat, e = {p:[], n:[]});
+    for (let i = 0; i < P.count; i++) { BV.fromBufferAttribute(P, i).applyMatrix4(BM); e.p.push(BV.x, BV.y, BV.z); BV.fromBufferAttribute(Nn, i).applyMatrix3(BN).normalize(); e.n.push(BV.x, BV.y, BV.z); }
+    return this;
+  }
+  build(parent, shadow = true){
+    const out = [];
+    for (const [mat, e] of this.map) {
+      const g = new THREE.BufferGeometry(), p = e.p; g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(e.n, 3));
+      if (mat.map || mat.normalMap) {   // box-projected UVs: each triangle is mapped along its dominant axis, at a fixed number of tiles per metre
+        const k = mat.userData.uv || 1/96, uv = new Float32Array(p.length/3*2);
+        for (let i = 0; i < p.length; i += 9) {
+          BA.set(p[i + 3] - p[i], p[i + 4] - p[i + 1], p[i + 5] - p[i + 2]); BB.set(p[i + 6] - p[i], p[i + 7] - p[i + 1], p[i + 8] - p[i + 2]); BA.cross(BB);
+          const ax = Math.abs(BA.x), ay = Math.abs(BA.y), az = Math.abs(BA.z), o = i/3*2;
+          for (let v = 0; v < 3; v++) { const X = p[i + v*3], Y = p[i + v*3 + 1], Z = p[i + v*3 + 2];
+            if (ax >= ay && ax >= az) { uv[o + v*2] = Z*k; uv[o + v*2 + 1] = Y*k; } else if (ay >= az) { uv[o + v*2] = X*k; uv[o + v*2 + 1] = Z*k; } else { uv[o + v*2] = X*k; uv[o + v*2 + 1] = Y*k; } }
+        }
+        g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      }
+      const m = new THREE.Mesh(g, mat), lit = shadow && !mat.isMeshBasicMaterial && !mat.transparent; m.castShadow = m.receiveShadow = lit; parent.add(m); out.push(m);
+    }
+    return out;
+  }
+}
+// A flat-shaded skin over a row of cross-sections (each a closed polygon of [x, y, z] with the same point count), capped at both ends.
+function loft(secs, closed){
+  const pos = [], n = secs[0].length, L = secs.length;
+  const tri = (a, b, c) => pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  for (let i = 0; i < (closed ? L : L - 1); i++) { const s0 = secs[i], s1 = secs[(i + 1) % L];
+    for (let j = 0; j < n; j++) { const k = (j + 1) % n; tri(s0[j], s0[k], s1[k]); tri(s0[j], s1[k], s1[j]); } }
+  if (!closed) for (const i of [0, L - 1]) { const s = secs[i], c = [0, 0, 0]; for (const q of s) { c[0] += q[0]/n; c[1] += q[1]/n; c[2] += q[2]/n; }
+    for (let j = 0; j < n; j++) { const k = (j + 1) % n; if (i) tri(c, s[j], s[k]); else tri(c, s[k], s[j]); } }
+  let vol = 0; const out = [];
+  for (let i = 0; i < pos.length; i += 9) vol += pos[i]*(pos[i + 4]*pos[i + 8] - pos[i + 5]*pos[i + 7]) - pos[i + 1]*(pos[i + 3]*pos[i + 8] - pos[i + 5]*pos[i + 6]) + pos[i + 2]*(pos[i + 3]*pos[i + 7] - pos[i + 4]*pos[i + 6]);
+  for (let i = 0; i < pos.length; i += 9) {   // drop zero-area triangles; turn everything outward if the winding came out inside-out
+    const ux = pos[i + 3] - pos[i], uy = pos[i + 4] - pos[i + 1], uz = pos[i + 5] - pos[i + 2], vx = pos[i + 6] - pos[i], vy = pos[i + 7] - pos[i + 1], vz = pos[i + 8] - pos[i + 2];
+    if (Math.hypot(uy*vz - uz*vy, uz*vx - ux*vz, ux*vy - uy*vx) < 1e-4) continue;
+    if (vol < 0) out.push(pos[i], pos[i + 1], pos[i + 2], pos[i + 6], pos[i + 7], pos[i + 8], pos[i + 3], pos[i + 4], pos[i + 5]); else for (let k = 0; k < 9; k++) out.push(pos[i + k]);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3)); g.computeVertexNormals(); return g;
 }
 
 G.SpaceWorld = class {
@@ -122,56 +227,189 @@ G.SpaceWorld = class {
     this.sun.position.copy(q).addScaledVector(this.sunDir, 1000); this.sun.target.position.copy(q); this.sun.target.updateMatrixWorld();
   }
   buildStation(scene){
-    const {rbox, cyl, M} = G.geo, g = new THREE.Group(); g.position.set(ST.x, ST.y, ST.z); scene.add(g); this.station = g; G.stationLive = true;
-    const tex = hullTexture('#8d939a', 'rgba(20,24,30,0.35)', 5); tex.repeat.set(6, 6);
-    const hullM = new THREE.MeshStandardMaterial({color:0x9aa0a8, map:tex, roughness:0.6, metalness:0.45});
-    const darkM = new THREE.MeshStandardMaterial({color:0x2a2e35, roughness:0.7, metalness:0.4}), redM = new THREE.MeshStandardMaterial({color:0x8a2e27, roughness:0.6, metalness:0.3});
-    const ftex = hullTexture('#4a4f57', 'rgba(255,200,80,0.25)', 9); ftex.repeat.set(10, 10);
-    const floorM = new THREE.MeshStandardMaterial({color:0x5a6069, map:ftex, roughness:0.75, metalness:0.35});
-    const inM = new THREE.MeshStandardMaterial({color:0x6c727b, map:tex, roughness:0.7, metalness:0.35, side:THREE.DoubleSide});
-    const lampM = new THREE.MeshBasicMaterial({color:0xffe6b0}), redLamp = this.alarmM = new THREE.MeshBasicMaterial({color:0xff3a2a}), cyanM = new THREE.MeshBasicMaterial({color:0x6fe3ff});
-    const W = ST.hw, H = ST.hh, D = ST.hd, T = ST.t;
-    const box = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; g.add(b); return b; };
-    // walls: floor slab, roof, the two sides, the back, and the front wall in three pieces around the mouth
-    box(2*W + 2*T, T, 2*D + 2*T, hullM, 0, -H - T/2, 0); box(2*W + 2*T, T, 2*D + 2*T, hullM, 0, H + T/2, 0);
-    box(T, 2*H, 2*D + 2*T, hullM, -W - T/2, 0, 0); box(T, 2*H, 2*D + 2*T, hullM, W + T/2, 0, 0); box(2*W, 2*H, T, hullM, 0, 0, D + T/2);
+    const g = new THREE.Group(); g.position.set(ST.x, ST.y, ST.z); scene.add(g); this.station = g; G.stationLive = true;
+    const ps = panelSet('hull', 5, {win:0.2, cells:1, depth:7}), dk = panelSet('deck', 9, {size:512, cells:4, depth:1, min:60, vary:22, dots:true, base:170, bump:2.4});
+    const std = (o, uv) => { const m = new THREE.MeshStandardMaterial(o); if (uv) m.userData.uv = uv; return m; }, basic = c => new THREE.MeshBasicMaterial({color:c});
+    const hullM = std({color:0x666c75, map:ps.map, normalMap:ps.normalMap, emissive:0xffffff, emissiveMap:ps.emissiveMap, emissiveIntensity:0.9, roughness:0.68, metalness:0.3});
+    const plateM = std({color:0x5b6169, map:ps.map, normalMap:ps.normalMap, roughness:0.7, metalness:0.3});
+    const darkM = std({color:0x32363d, map:ps.map, normalMap:ps.normalMap, roughness:0.7, metalness:0.35});
+    const trimM = std({color:0x1c1f24, roughness:0.6, metalness:0.5}), redM = std({color:0xa02c23, normalMap:ps.normalMap, roughness:0.55, metalness:0.35});
+    const inM = std({color:0x747a84, map:ps.map, normalMap:ps.normalMap, roughness:0.7, metalness:0.35}, 1/72);
+    const floorM = std({color:0x6a707a, map:dk.map, normalMap:dk.normalMap, roughness:0.68, metalness:0.4}, 1/24);
+    const paintY = std({color:0xc9981c, roughness:0.8, metalness:0.1}), paintW = std({color:0xb9bdc2, roughness:0.8, metalness:0.1});
+    const hazM = std({map:hazardTex(), roughness:0.7, metalness:0.2}, 1/6);
+    const solarM = std({color:0xffffff, map:solarTex(), emissive:0x081230, roughness:0.25, metalness:0.7}, 1/20);
+    const lampM = basic(0xffe6b0), redLamp = this.alarmM = basic(0xff3a2a), cyanM = basic(0x6fe3ff), winM = basic(0xffd9a0), hotM = basic(0xff8a3a), emberM = basic(0xa8481c);
+    const W = ST.hw, H = ST.hh, D = ST.hd, T = ST.t, O = W + T, Y1 = H + T, PI = Math.PI, R = rng(4127);
+    const B = new Batch();
+    const box = (w, h, d, m, x, y, z, ry = 0, rx = 0, rz = 0) => B.add(m, new THREE.BoxGeometry(w, h, d), x, y, z, rx, ry, rz);
+    const pr = (rt, rb, h, seg, m, x, y, z) => B.add(m, flat(new THREE.CylinderGeometry(rt, rb, h, seg)), x, y, z, 0, PI/seg, 0);         // upright prism / frustum with flat sides facing the axes
+    const tube = (r, len, m, x, y, z, ax, seg = 14) => B.add(m, new THREE.CylinderGeometry(r, r, len, seg), x, y, z, ax === 'z' ? PI/2 : 0, 0, ax === 'x' ? PI/2 : 0);
+    const disc = (r, m, x, y, z, rx, ry = 0) => B.add(m, new THREE.CircleGeometry(r, 24), x, y, z, rx, ry, 0);
+
+    /* ---- the hull box: floor slab, roof, sides, back, and the front wall in three pieces around the mouth (the collision contract) ---- */
+    box(2*O, T, 2*O, plateM, 0, -H - T/2, 0); box(2*O, T, 2*O, plateM, 0, H + T/2, 0);
+    box(T, 2*H, 2*O, hullM, -W - T/2, 0, 0); box(T, 2*H, 2*O, hullM, W + T/2, 0, 0); box(2*W, 2*H, T, hullM, 0, 0, D + T/2);
     box(W - ST.mw, 2*H, T, hullM, -(W + ST.mw)/2, 0, -D - T/2); box(W - ST.mw, 2*H, T, hullM, (W + ST.mw)/2, 0, -D - T/2);
     box(2*ST.mw, 2*H - ST.mh, T, hullM, 0, -H + ST.mh + (2*H - ST.mh)/2, -D - T/2);
-    // interior surfaces (a darker lining so the inside reads as a hangar), the deck, pillars, catwalks and ceiling lights
-    const lin = (w, h, d, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), inM); b.position.set(x, y, z); b.receiveShadow = true; g.add(b); };
-    lin(2*W, 0.5, 2*D, 0, H - 0.3, 0); lin(0.5, 2*H, 2*D, -W + 0.3, 0, 0); lin(0.5, 2*H, 2*D, W - 0.3, 0, 0); lin(2*W, 2*H, 0.5, 0, 0, D - 0.3);
-    { const fl = new THREE.Mesh(new THREE.PlaneGeometry(2*W, 2*D), floorM); fl.rotation.x = -Math.PI/2; fl.position.y = -H + 0.05; fl.receiveShadow = true; g.add(fl); }
-    for (const [px, pz] of PILLARS) { box(16, 2*H, 16, hullM, px, 0, pz); box(17, 2, 17, darkM, px, -H + 1, pz); box(17, 2, 17, darkM, px, H - 1, pz); box(2, 2*H - 6, 17.2, lampM, px, 0, pz).castShadow = false; }
-    for (const s of [-1, 1]) { box(14, 1.2, 2*D - 40, darkM, s*(W - 8), 10, 0); for (let z = -D + 30; z < D - 20; z += 40) box(1, 10, 1, darkM, s*(W - 14), 15, z); }   // catwalks along the side walls
-    for (let x = -W + 60; x < W; x += 120) for (let z = -D + 60; z < D; z += 120) box(30, 0.6, 6, lampM, x, H - 1, z).castShadow = false;
-    for (let x = -W + 20; x < W; x += 40) { box(10, 0.3, 2, cyanM, x, -H + 0.25, -D + 30).castShadow = false; }   // landing line by the mouth
-    // hangar mouth: lit frame and hazard stripes; "TESSARACT" in Varn red
-    for (const s of [-1, 1]) { box(4, ST.mh, 3, redM, s*(ST.mw + 2), -H + ST.mh/2, -D - T - 1.5); for (let y = -H + 4; y < -H + ST.mh; y += 8) box(1.2, 4, 1, lampM, s*(ST.mw + 4.5), y, -D - T - 3).castShadow = false; }
-    box(2*ST.mw + 8, 4, 3, redM, 0, -H + ST.mh + 2, -D - T - 1.5);
-    // exterior detail: lit window bands on every wall, roof modules and radiator fins, docking arms beside the mouth
-    const winM = new THREE.MeshBasicMaterial({color:0xffd9a0});
-    for (const y of [-30, 10, 40]) { for (const s of [-1, 1]) { const b = box(1, 3, 2*D - 40, winM, s*(W + T + 0.6), y, 0); b.castShadow = false; }
-      const bb = box(2*W - 40, 3, 1, winM, 0, y, D + T + 0.6); bb.castShadow = false; }
-    for (const [x, z, w, h, d] of [[-150, -120, 70, 18, 50], [140, -60, 60, 26, 80], [-60, 130, 90, 14, 60], [160, 150, 40, 34, 40], [-170, 40, 30, 12, 110]]) { box(w, h, d, hullM, x, H + T + h/2, z); box(w + 2, 2, d + 2, darkM, x, H + T + h + 1, z); }
-    for (let k = 0; k < 6; k++) box(2, 30, 60, darkM, -40 + k*16, H + T + 15, -150);
-    for (const s of [-1, 1]) { box(14, 14, 140, darkM, s*(ST.mw + 40), -H + 20, -D - T - 70); box(30, 4, 30, redM, s*(ST.mw + 40), -H + 29, -D - T - 135); }
-    // the outer ring on spokes, solar arrays, antenna mast and beacons
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(520, 22, 12, 96), hullM); ring.rotation.x = Math.PI/2; ring.castShadow = true; g.add(ring);
-    for (let k = 0; k < 4; k++) { const a = k*Math.PI/2 + Math.PI/4, sp = new THREE.Mesh(new THREE.BoxGeometry(16, 14, 520 - 320), darkM); sp.position.set(Math.sin(a)*420, 0, Math.cos(a)*420); sp.rotation.y = a; sp.castShadow = true; g.add(sp); }
-    for (let k = 0; k < 24; k++) { const a = k/24*Math.PI*2, b = new THREE.Mesh(new THREE.BoxGeometry(26, 10, 40), k % 4 ? hullM : redM); b.position.set(Math.sin(a)*520, 0, Math.cos(a)*520); b.rotation.y = a; g.add(b); }   // ring habitat modules
-    const solarM = new THREE.MeshStandardMaterial({color:0x1a2a55, emissive:0x0a1430, roughness:0.25, metalness:0.7});
-    for (const s of [-1, 1]) { box(400, 6, 10, darkM, s*(560 + 200), 0, 0);
-      for (let k = 0; k < 4; k++) { const p = new THREE.Mesh(new THREE.BoxGeometry(80, 1.2, 220), solarM); p.position.set(s*(620 + k*90), 0, 0); p.castShadow = true; g.add(p); } }
-    box(6, 240, 6, darkM, 0, H + T + 120, 120); box(40, 3, 40, darkM, 0, H + T + 240, 120); const dish = new THREE.Mesh(new THREE.SphereGeometry(30, 20, 10, 0, Math.PI*2, 0, Math.PI/2.5), hullM); dish.position.set(0, H + T + 250, 120); g.add(dish);
+
+    /* ---- exterior ---- */
+    // heavy edge beams round all twelve edges, buttress ribs, an armour belt with a red line, and window strips between the ribs
+    for (const sy of [-1, 1]) for (const s of [-1, 1]) { box(2*O + 8, 8, 8, trimM, 0, sy*Y1, s*O); box(8, 8, 2*O + 8, trimM, s*O, sy*Y1, 0); }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(10, 2*Y1, 10, trimM, sx*O, 0, sz*O);
+    for (const s of [-1, 1]) {
+      for (let z = -210; z <= 210; z += 60) { box(5, 2*Y1 - 8, 7, darkM, s*(O + 2), 0, z); if (s > 0) box(5, 2*Y1 - 8, 7, darkM, z, 0, O + 2, PI/2); }
+      box(3, 22, 2*O - 12, darkM, s*(O + 1), 8, 0); box(1, 1.6, 2*O - 12, redM, s*(O + 2.6), 8, 0);
+      for (let z = -180; z <= 180; z += 60) for (const y of [-34, 44]) box(0.8, 2.2, 42, winM, s*(O + 0.5), y, z);
+      for (const x of [150, 250]) box(7, 2*Y1 - 8, 5, darkM, s*x, 0, -O - 2);
+      // a tall Varn-red banner plate each side of the mouth
+      box(38, 100, 1.4, redM, s*200, 12, -O - 0.7); box(42, 4, 2.4, trimM, s*200, 64, -O - 1.2); box(42, 4, 2.4, trimM, s*200, -40, -O - 1.2);
+      for (let k = 0; k < 3; k++) box(22 - k*6, 3, 0.6, trimM, s*200, 40 - k*9, -O - 1.5);
+      box(3, 44, 0.6, trimM, s*200, -8, -O - 1.5);
+      // battered skirt along the foot of the walls (front: clear of the docking arms and the mouth)
+      B.add(darkM, loft([[[s*O, -Y1 - 4, -O], [s*(O + 18), -Y1 - 4, -O], [s*(O + 18), -Y1 + 6, -O], [s*O, -40, -O]], [[s*O, -Y1 - 4, O], [s*(O + 18), -Y1 - 4, O], [s*(O + 18), -Y1 + 6, O], [s*O, -40, O]]]));
+      B.add(darkM, loft([[[s*136, -Y1 - 4, -O], [s*136, -Y1 - 4, -O - 18], [s*136, -Y1 + 6, -O - 18], [s*136, -44, -O]], [[s*O, -Y1 - 4, -O], [s*O, -Y1 - 4, -O - 18], [s*O, -Y1 + 6, -O - 18], [s*O, -44, -O]]]));
+      // tank farm low on each flank
+      for (const z of [-150, 0, 150]) { tube(15, 96, plateM, s*(O + 15), -18, z, 'z', 16); for (const dz of [-48, 48]) B.add(plateM, new THREE.SphereGeometry(15, 16, 8), s*(O + 15), -18, z + dz);
+        for (const dz of [-30, 30]) tube(15.8, 4, trimM, s*(O + 15), -18, z + dz, 'z', 16); box(14, 5, 5, trimM, s*(O + 6), -18, z); }
+    }
+    box(3, 22, 2*O - 12, darkM, 0, 8, O + 1, PI/2); box(1, 1.6, 2*O - 12, redM, 0, 8, O + 2.6, PI/2);
+    B.add(darkM, loft([[[-O, -Y1 - 4, O], [-O, -Y1 - 4, O + 18], [-O, -Y1 + 6, O + 18], [-O, -40, O]], [[O, -Y1 - 4, O], [O, -Y1 - 4, O + 18], [O, -Y1 + 6, O + 18], [O, -40, O]]]));
+    for (let x = -180; x <= 180; x += 60) box(42, 2.2, 0.8, winM, x, 46, O + 0.5);
+    // three reactor exhaust vents on the back wall
+    for (const x of [-150, 0, 150]) { B.add(trimM, flat(new THREE.CylinderGeometry(34, 40, 14, 12)), x, -22, O + 7, PI/2, 0, 0); disc(29, emberM, x, -22, O + 14.2, 0, 0);
+      for (let k = -2; k <= 2; k++) box(Math.sqrt(29*29 - k*k*100)*2, 2.4, 2, trimM, x, -22 + k*10, O + 14.6); B.add(hotM, new THREE.TorusGeometry(31, 0.8, 6, 32), x, -22, O + 14.3); }
+
+    // roof: a stepped octagonal citadel with a command tower, radiator bank, mast and dish; corner pads for the defence turrets
+    pr(160, 176, 12, 8, plateM, 0, Y1 + 6, 0); pr(112, 112, 20, 8, hullM, 0, Y1 + 22, 30); pr(104, 112, 4, 8, trimM, 0, Y1 + 34, 30);
+    B.add(winM, new THREE.CylinderGeometry(112.4, 112.4, 1.6, 8, 1, true), 0, Y1 + 24, 30, 0, PI/8, 0);
+    pr(54, 60, 44, 8, hullM, 0, Y1 + 58, 30); pr(66, 54, 6, 8, darkM, 0, Y1 + 83, 30); pr(66, 66, 10, 8, hullM, 0, Y1 + 91, 30); pr(40, 66, 8, 8, darkM, 0, Y1 + 100, 30);
+    B.add(winM, new THREE.CylinderGeometry(66.4, 66.4, 2, 8, 1, true), 0, Y1 + 92, 30, 0, PI/8, 0); B.add(redM, flat(new THREE.CylinderGeometry(56.6, 57.1, 3, 8)), 0, Y1 + 62, 30, 0, PI/8, 0);
+    for (let k = 0; k < 4; k++) { const a = PI/4 + k*PI/2; box(8, 50, 26, darkM, Math.sin(a)*62, Y1 + 59, 30 + Math.cos(a)*62, a); }   // tower buttresses
+    for (let k = 0; k < 7; k++) { box(2, 24, 56, darkM, -48 + k*16, Y1 + 24, -118); box(2.4, 1, 56, hotM, -48 + k*16, Y1 + 36.2, -118); }
+    box(112, 4, 60, trimM, 0, Y1 + 13, -118);
+    box(6, 208, 6, trimM, 0, Y1 + 136, 120); for (let y = 60; y < 240; y += 36) box(14, 2, 14, darkM, 0, Y1 + y, 120);
+    for (const s of [-1, 1]) box(1.2, 150, 1.2, trimM, s*14, Y1 + 100, 120, 0, 0, s*0.09);
+    box(40, 3, 40, darkM, 0, Y1 + 240, 120); B.add(plateM, new THREE.SphereGeometry(30, 20, 10, 0, PI*2, 0, PI/2.5), 0, Y1 + 232, 120);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { box(46, 0.6, 46, trimM, sx*200, Y1 + 0.3, sz*200); for (const a of [-1, 1]) for (const b of [-1, 1]) box(5, 1.2, 5, redM, sx*200 + a*24, Y1 + 0.6, sz*200 + b*24); }
+    for (let i = 0; i < 220; i++) { const x = (R() - 0.5)*480, z = (R() - 0.5)*480, w = 8 + R()*22, d = 8 + R()*22, h = 2 + R()*R()*14;
+      if (Math.hypot(x, z) < 190 + Math.max(w, d) || (Math.abs(Math.abs(x) - 200) < 34 + w/2 && Math.abs(Math.abs(z) - 200) < 34 + d/2)) continue;
+      box(w, h, d, R() < 0.5 ? plateM : darkM, x, Y1 + h/2, z); if (R() < 0.35) box(w*0.5, 1.6, d*0.5, trimM, x, Y1 + h + 0.8, z); }
+
+    // belly: an inverted stepped keel down to the reactor bulb and a long spike, with four radiator vanes
+    pr(236, 168, 26, 8, darkM, 0, -Y1 - 13, 0); pr(128, 100, 34, 8, plateM, 0, -Y1 - 43, 0); pr(70, 70, 40, 8, trimM, 0, -Y1 - 80, 0); pr(60, 22, 50, 8, darkM, 0, -Y1 - 125, 0);
+    B.add(trimM, new THREE.CylinderGeometry(8, 1, 120, 8), 0, -Y1 - 210, 0); B.add(hotM, new THREE.CylinderGeometry(129, 129, 1.6, 8, 1, true), 0, -Y1 - 28, 0, 0, PI/8, 0);
+    for (let k = 0; k < 8; k++) { const a = k*PI/4; box(3, 30, 1, hotM, Math.sin(a)*64.9, -Y1 - 80, Math.cos(a)*64.9, a); }
+    for (let k = 0; k < 4; k++) { const a = PI/4 + k*PI/2; box(3, 64, 120, darkM, Math.sin(a)*150, -Y1 - 58, Math.cos(a)*150, a); box(3.6, 1.4, 120, hotM, Math.sin(a)*150, -Y1 - 90.5, Math.cos(a)*150, a); }
+
+    // the outer ring: a flat octagonal band (deck at +22 for the ring turrets, underside clear of the mouth approach) on four truss spokes
+    const rp = (b, r, t) => [Math.sin(b)*r + Math.cos(b)*t, Math.cos(b)*r - Math.sin(b)*t], sc = 1/Math.cos(PI/8);
+    const rsec = [[500, 4], [540, 4], [546, 9], [546, 17], [540, 22], [500, 22], [494, 17], [494, 9]];
+    B.add(hullM, loft(Array.from({length:8}, (_, k) => { const a = PI/8 + k*PI/4; return rsec.map(([r, y]) => [Math.sin(a)*r*sc, y, Math.cos(a)*r*sc]); }), true));
+    const rbox = (w, h, d, m, b, r, t, y) => { const [x, z] = rp(b, r, t); box(w, h, d, m, x, y, z, b); };
+    for (let k = 0; k < 8; k++) { const b = k*PI/4, diag = k % 2 === 1;
+      for (let t = -160; t <= 160; t += 80) rbox(56, 1.6, 0.8, winM, b, 546.3, t, 13);
+      for (const t of [-110, 0, 110]) rbox(50, 1.4, 0.8, winM, b, 493.7, t, 13);
+      rbox(8, 2, 48, trimM, b, 520, -205, 22.6); rbox(8, 2, 48, trimM, b, 520, 205, 22.6);
+      for (const t of [-120, 120]) { rbox(54, 7, 28, plateM, b, 520, t, 25.5); rbox(40, 2, 18, darkM, b, 520, t, 30); }
+      if (diag) { rbox(96, 15, 16, hullM, b, 553, 0, 13); rbox(100, 3, 18, redM, b, 553, 0, 13); rbox(70, 9, 30, plateM, b, 520, 0, 26.5); rbox(74, 2, 12, redM, b, 520, 0, 31.5); }
+      else { rbox(38, 0.6, 38, trimM, b, 520, 0, 22.3); for (const t of [-120, 120]) { const [x, z] = rp(b, 556, t); B.add(plateM, new THREE.CylinderGeometry(7, 7, 60, 12), x, 13, z, 0, b, PI/2); rbox(4, 12, 8, trimM, b, 549, t, 13); } }
+      if (k !== 4) rbox(130, 5, 22, darkM, b, 520, 0, 1.5);
+      const a = PI/8 + k*PI/4, vr = 520*sc; B.add(darkM, flat(new THREE.CylinderGeometry(32, 32, 24, 8)), Math.sin(a)*vr, 13, Math.cos(a)*vr, 0, a + PI/8, 0);
+      box(1.6, 46, 1.6, trimM, Math.sin(a)*vr, 48, Math.cos(a)*vr); box(12, 1.2, 12, redM, Math.sin(a)*vr, 25.6, Math.cos(a)*vr, a);
+      if (diag) { rbox(14, 11, 136, darkM, b, 430, 0, 12); }
+    }
+    for (let k = 0; k < 4; k++) { const b = PI/4 + k*PI/2; for (const [y0, y1] of [[80, 22], [-78, 6]]) { const len = Math.hypot(134, y1 - y0), [x, z] = rp(b, 433, 0); box(3, 3, len, trimM, x, (y0 + y1)/2, z, b, Math.atan2(y0 - y1, 134)); }
+      for (const t of [-5, 5]) { const [x, z] = rp(b, 430, t); B.add(plateM, new THREE.CylinderGeometry(1.6, 1.6, 136, 8), x, 19, z, PI/2, b, 0); } }
+    // solar wings on booms off the ring, each pair of panels canted up in a shallow V
+    for (const s of [-1, 1]) { box(440, 5, 5, trimM, s*766, 13, 0); box(10, 10, 10, darkM, s*986, 13, 0);
+      for (let k = 0; k < 4; k++) for (const q of [-1, 1]) { const x = s*(622 + k*96), ang = -q*0.2, y = 13 + 64*Math.sin(0.2), z = q*64*Math.cos(0.2);
+        box(84, 0.8, 104, solarM, x, y, z, 0, ang); for (const e of [-42, 42]) box(2, 1.6, 106, trimM, x + e, y, z, 0, ang); box(86, 1.6, 2, trimM, x, 13 + 116*Math.sin(0.2), q*116*Math.cos(0.2), 0, ang); } }
+
+    // hangar mouth: a massive dark portal with a red inner lip, hazard lintel, lamp columns and lit docking arms
+    const mw = ST.mw, mh = ST.mh, my = -H + mh;
+    for (const s of [-1, 1]) { box(12, mh + 14, 8, darkM, s*(mw + 6), -H + (mh + 14)/2, -O - 4); box(1.5, mh, 8.6, redM, s*(mw + 0.75), -H + mh/2, -O - 4.2);
+      for (let y = -H + 6; y < my; y += 8) box(1.6, 3.4, 0.6, lampM, s*(mw + 7), y, -O - 8.2);
+      for (const y of [-H + 20, -H + 44]) box(0.4, 1.6, 16, lampM, s*(mw - 0.1), y, -D - T/2);
+      // docking arm: a truss boom with approach lights and a pad at its tip
+      box(14, 14, 140, darkM, s*(mw + 40), -H + 20, -O - 70); box(16, 3, 132, trimM, s*(mw + 40), -H + 28, -O - 66); box(20, 20, 6, trimM, s*(mw + 40), -H + 20, -O - 3);
+      for (let z = -O - 14; z > -O - 136; z -= 14) box(0.6, 1.2, 3, cyanM, s*(mw + 32.8), -H + 23, z);
+      B.add(redM, flat(new THREE.CylinderGeometry(19, 21, 4, 8)), s*(mw + 40), -H + 29, -O - 135, 0, PI/8, 0); B.add(trimM, flat(new THREE.CylinderGeometry(14, 14, 0.6, 8)), s*(mw + 40), -H + 31.2, -O - 135, 0, PI/8, 0);
+ }
+    box(2*mw + 24, 14, 8, darkM, 0, my + 7, -O - 4); box(2*mw + 3, 1.5, 8.6, redM, 0, my + 0.75, -O - 4.2); box(2*mw + 24, 5, 8, darkM, 0, -H - 2.5, -O - 4);
+    box(2*mw - 8, 3.4, 0.5, hazM, 0, my + 9, -O - 8.2); box(2*mw, 0.12, 6, hazM, 0, -H + 0.08, -O - 5); box(2*mw, 0.12, 3, hazM, 0, -H + 0.08, -D - 1.5);
+    for (const x of [-50, 0, 50]) box(14, 0.4, 16, lampM, x, my - 0.1, -D - T/2);
+
+    /* ---- interior: lining, deck, structure, lights ---- */
+    box(2*W, 0.5, 2*D, inM, 0, H - 0.3, 0); box(0.5, 2*H, 2*D, inM, -W + 0.3, 0, 0); box(0.5, 2*H, 2*D, inM, W - 0.3, 0, 0); box(2*W, 2*H, 0.5, inM, 0, 0, D - 0.3);
+    box(W - mw, 2*H, 0.5, inM, -(W + mw)/2, 0, -D + 0.3); box(W - mw, 2*H, 0.5, inM, (W + mw)/2, 0, -D + 0.3); box(2*mw, 2*H - mh, 0.5, inM, 0, my + (2*H - mh)/2, -D + 0.3);
+    B.add(floorM, new THREE.PlaneGeometry(2*W, 2*D), 0, -H + 0.05, 0, -PI/2, 0, 0);
+    const fy = -H + 0.1;
+    // pillars: lit on all four faces, hazard banded, collared, with flared capitals under the roof
+    for (const [px, pz] of PILLARS) { box(16, 2*H, 16, plateM, px, 0, pz); box(18.4, 1, 18.4, trimM, px, -H + 0.5, pz); box(16.5, 2.4, 16.5, hazM, px, -H + 3.6, pz);
+      for (const y of [-H + 6, -22, 16]) box(17.2, 2, 17.2, darkM, px, y, pz);
+      B.add(darkM, flat(new THREE.CylinderGeometry(21, 11.6, 10, 4)), px, H - 5, pz, 0, PI/4, 0);
+      box(2, 2*H - 26, 16.4, lampM, px, -4, pz); box(16.4, 2*H - 26, 2, lampM, px, -4, pz);
+      box(30, 0.1, 2, hazM, px, fy, pz - 14); box(30, 0.1, 2, hazM, px, fy, pz + 14); box(2, 0.1, 26, hazM, px - 14, fy, pz); box(2, 0.1, 26, hazM, px + 14, fy, pz); }
+    // wall frames, bay doors, light strips and the two catwalks
+    for (const s of [-1, 1]) {
+      for (let z = -210; z <= 210; z += 60) { box(3, 2*H, 6, darkM, s*(W - 1.6), 0, z); if (s > 0 && Math.abs(z) > 80) box(6, 2*H, 3, darkM, z, 0, D - 1.6); }
+      for (let z = -180; z <= 180; z += 60) { const door = Math.abs(z) % 120 === 60;
+        if (door) { box(1.6, 40, 44, darkM, s*(W - 0.9), -H + 20, z); box(1.8, 2.4, 46, hazM, s*(W - 0.9), -H + 41.4, z); box(0.5, 34, 1, trimM, s*(W - 1.8), -H + 18, z); box(0.4, 1.2, 10, lampM, s*(W - 1.8), -H + 45, z); }
+        else { box(1.2, 26, 40, darkM, s*(W - 0.8), -H + 18, z); box(0.4, 1.4, 36, lampM, s*(W - 1.5), -H + 34, z); }
+        box(0.4, 1, 46, redLamp, s*(W - 0.7), 34, z); box(0.4, 1.4, 40, lampM, s*(W - 0.7), -14, z); }
+      box(14, 1.2, 2*D - 40, darkM, s*(W - 8), 10, 0); box(0.5, 0.5, 2*D - 40, trimM, s*(W - 14.6), 12.6, 0); box(0.5, 0.9, 2*D - 40, hazM, s*(W - 15.1), 10, 0);
+      for (let z = -D + 22; z < D - 20; z += 8) box(0.4, 2.2, 0.4, trimM, s*(W - 14.6), 11.6, z);
+      for (let z = -210; z <= 210; z += 60) { box(14, 4, 2.4, trimM, s*(W - 8), 7.6, z, 0, 0, s*0.28); box(1, 0.3, 22, lampM, s*(W - 8), 9.3, z + 30 > 220 ? z - 30 : z + 30); }
+      for (const x of [110, 170, 230]) box(6, 2*H, 3, darkM, s*x, 0, -D + 1.6);
+      box(1, mh, 0.6, lampM, s*(mw + 3), -H + mh/2, -D + 0.6);
+      box(1.2, 0.1, 2*D - 40, paintY, s*(W - 26), fy, 0); box(1, 0.1, 330, paintY, s*40, fy, -65);
+      for (let z = -216; z < 100; z += 26) box(1.6, 0.26, 4, cyanM, s*43, -H + 0.13, z);
+    }
+    box(2*mw + 7, 1, 0.6, lampM, 0, my + 2.5, -D + 0.6);
+    for (const y of [16, 27, 38]) for (const s of [-1, 1]) box(24, 2.6, 0.6, redLamp, s*9.6, y, -D + 0.7, 0, 0, s*0.6);        // "way out" chevrons over the mouth: they flash with the alarm
+    for (let x = -W + 20; x < W; x += 40) box(10, 0.3, 2, cyanM, x, -H + 0.25, -D + 30);                                           // landing line by the mouth
+    for (let z = -224; z < 100; z += 26) box(2.5, 0.1, 13, paintW, 0, fy, z);
+    for (const [x, z] of [[-175, -165], [175, -165], [-180, -8], [180, -8]]) { B.add(paintY, new THREE.RingGeometry(25, 27, 40), x, fy, z, -PI/2, 0, 0); B.add(paintW, new THREE.RingGeometry(9, 10, 28), x, fy, z, -PI/2, 0, 0);
+      for (let k = 0; k < 4; k++) { const a = k*PI/2; box(1.2, 0.1, 12, paintW, x + Math.sin(a)*18, fy, z + Math.cos(a)*18, a); } }
+    // roof structure: girders, lamp housings and a gantry crane on rails
+    for (let z = -210; z <= 210; z += 60) box(2*W, 5, 4, darkM, 0, H - 2.5, z);
+    for (const x of [-180, -60, 60, 180]) { box(4, 3, 2*D, darkM, x, H - 1.5, 0); for (let z = -180; z <= 180; z += 60) { box(36, 2.4, 10, trimM, x, H - 4.2, z); box(30, 0.6, 6, lampM, x, H - 5.6, z); } }
+    for (const s of [-1, 1]) box(3, 3, 2*D - 20, trimM, s*40, H - 7, 0);
+    box(88, 5, 12, darkM, 0, H - 10.5, -40); box(88, 1.6, 12.4, hazM, 0, H - 12.4, -40); box(12, 6, 10, trimM, 16, H - 15, -40); box(0.6, 18, 0.6, trimM, 16, H - 27, -40); box(5, 4, 5, hazM, 16, H - 38, -40);
+    // reactor chamber at the back: octagonal steps, a cage of posts and rings, an injector hanging from the roof and conduits into the back wall
+    const rz = D - 70;
+    B.add(hazM, new THREE.RingGeometry(50, 54, 48), 0, fy, rz, -PI/2, 0, 0);
+    pr(44, 46, 5, 8, darkM, 0, -H + 2.5, rz); B.add(cyanM, new THREE.CylinderGeometry(39.5, 39.5, 1, 8, 1, true), 0, -H + 5.6, rz, 0, PI/8, 0); pr(36, 39, 7, 8, plateM, 0, -H + 8.5, rz);
+    pr(8, 14, 4, 8, trimM, 0, -H + 14, rz); disc(7.4, cyanM, 0, -H + 16.1, rz, -PI/2);
+    for (let k = 0; k < 8; k++) { const a = k/8*PI*2, x = Math.sin(a)*34, z = rz + Math.cos(a)*34; box(3, 2*H - 12, 3, darkM, x, 6, z, a); box(0.8, 44, 0.5, redLamp, Math.sin(a)*35.7, 0, rz + Math.cos(a)*35.7, a); box(5, 3, 5, trimM, x, -H + 13.5, z, a); }
+    for (const y of [-20, 20, 48]) B.add(darkM, new THREE.TorusGeometry(34, 1.5, 6, 32), 0, y, rz, PI/2, 0, 0);
+    pr(44, 20, 22, 8, darkM, 0, H - 11, rz); pr(12, 12, 8, 8, trimM, 0, H - 26, rz); pr(10, 4, 6, 8, darkM, 0, H - 33, rz); disc(3.8, cyanM, 0, H - 36.1, rz, PI/2); B.add(cyanM, new THREE.CylinderGeometry(12.3, 12.3, 1, 8, 1, true), 0, H - 26, rz, 0, PI/8, 0);
+    for (const s of [-1, 1]) { tube(3, 56, plateM, s*22, H - 6, D - 28, 'z'); box(9, 9, 3, trimM, s*22, H - 6, D - 1.5);
+      box(54, 84, 2, darkM, s*130, -10, D - 1.6); box(44, 1, 0.5, redLamp, s*130, 26, D - 2.8); for (let k = 0; k < 4; k++) box(40, 1.4, 0.5, lampM, s*130, -44 + k*12, D - 2.8); }
+    B.add(trimM, new THREE.TorusGeometry(60, 3, 8, 40), 0, 0, D - 2); disc(58, darkM, 0, 0, D - 1, 0, PI); for (const y of [-18, 0, 18]) box(Math.sqrt(54*54 - y*y)*2, 1.4, 0.5, cyanM, 0, y, D - 1.4);
+    B.build(g);
+
+    // the name over the mouth, bay numbers on the deck, and a faint containment field across the mouth
+    { const c = document.createElement('canvas'); c.width = 1024; c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#e04a3a'; x.font = 'bold 92px "Arial Narrow", "Helvetica Neue", Arial, sans-serif'; x.textBaseline = 'middle';
+      let px = 150; for (const ch of 'TESSARACT') { x.fillText(ch, px, 68); px += x.measureText(ch).width + 22; }
+      x.fillRect(20, 30, 90, 14); x.fillRect(20, 56, 60, 14); x.fillRect(20, 82, 90, 14); x.fillRect(px + 10, 56, 1004 - px - 10, 14);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(150, 18.75), new THREE.MeshStandardMaterial({map:canvasTex(c, false), transparent:true, alphaTest:0.4, emissive:0x5a1208, roughness:0.6, metalness:0.2})); m.position.set(0, 38, -O - 0.5); m.rotation.y = PI; g.add(m); }
+    { const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#c9981c'; x.font = 'bold 110px "Arial Narrow", "Helvetica Neue", Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+      for (let k = 0; k < 4; k++) x.fillText('0' + (k + 1), 64 + k*128, 68);
+      const t = canvasTex(c, false), nm = new THREE.MeshStandardMaterial({map:t, transparent:true, alphaTest:0.4, roughness:0.8});
+      [[-175, -165], [175, -165], [-180, -8], [180, -8]].forEach(([x0, z0], k) => { const pg = new THREE.PlaneGeometry(20, 20), uv = pg.attributes.uv; for (let i = 0; i < 4; i++) uv.setX(i, (k + uv.getX(i))/4);
+        const m = new THREE.Mesh(pg, nm); m.rotation.set(-PI/2, 0, PI); m.position.set(x0, fy + 0.06, z0 - 38); g.add(m); }); }
+    { const c = document.createElement('canvas'); c.width = 256; c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#04080a'; x.fillRect(0, 0, 256, 128);
+      for (let j = 0; j < 128; j += 4) { x.fillStyle = 'rgba(90,200,255,0.05)'; x.fillRect(0, j, 256, 1); }
+      for (const [x0, y0, x1, y1] of [[0, 0, 26, 0], [256, 0, 230, 0], [0, 0, 0, 22], [0, 128, 0, 106]]) { const gd = x.createLinearGradient(x0, y0, x1, y1); gd.addColorStop(0, 'rgba(90,200,255,0.5)'); gd.addColorStop(1, 'rgba(90,200,255,0)'); x.fillStyle = gd; x.fillRect(0, 0, 256, 128); }
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(2*mw, mh), new THREE.MeshBasicMaterial({map:canvasTex(c, false), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide})); m.position.set(0, -H + mh/2, -D - T/2); g.add(m); }
     this.beacons = [];
-    for (const [x, y, z] of [[W + T, H + T, -D - T], [-W - T, H + T, -D - T], [W + T, H + T, D + T], [-W - T, H + T, D + T], [0, H + T + 245, 120], [-520, 22, 0], [520, 22, 0]]) { const b = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 6), redLamp); b.position.set(x, y + 3, z); g.add(b); this.beacons.push(b); }
+    for (const [x, y, z] of [[O, Y1, -O], [-O, Y1, -O], [O, Y1, O], [-O, Y1, O], [0, Y1 + 261, 120], [-520, 22, 0], [520, 22, 0], [mw + 40, -H + 31, -O - 135], [-mw - 40, -H + 31, -O - 135], [0, -Y1 - 276, 0], [0, Y1 + 104, 30]]) {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 6), redLamp); b.position.set(x, y + 3, z); g.add(b); this.beacons.push(b); }
     // interior lights: the sun can't reach in, so the hangar has its own
     this.inLights = [];
     for (const [x, z] of [[0, -150], [0, 40], [0, 180]]) { const L = new THREE.PointLight(0xffe2b8, 1.4, 420, 1.6); L.position.set(ST.x + x, ST.y + H - 12, ST.z + z); scene.add(L); this.inLights.push(L); }
-    // the reactor chamber at the back: a stepped pedestal and cage (the core itself is an entity)
-    box(80, 6, 80, darkM, 0, -H + 3, D - 70); box(60, 6, 60, hullM, 0, -H + 9, D - 70);
-    for (let k = 0; k < 8; k++) { const a = k/8*Math.PI*2; box(3, 2*H - 12, 3, darkM, Math.sin(a)*34, 0, D - 70 + Math.cos(a)*34); }
-    for (const y of [-20, 20, 48]) { const rg = new THREE.Mesh(new THREE.TorusGeometry(34, 1.5, 6, 32), darkM); rg.rotation.x = Math.PI/2; rg.position.set(0, y, D - 70); g.add(rg); }
   }
   update(dt, t){
     if (this.beacons) { const on = Math.floor(t*1.2) % 2 === 0; for (const b of this.beacons) b.visible = on; }
@@ -194,68 +432,108 @@ G.buildEnemy = function(type, o = {}){
 };
 function buildCore(){
   const g = new THREE.Group(), u = g.userData;
-  const coreM = u.coreM = new THREE.MeshStandardMaterial({color:0x7fe9ff, emissive:0x36c9ff, emissiveIntensity:2.2, roughness:0.2});
-  g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(12, 2), coreM));
+  const coreM = u.coreM = new THREE.MeshStandardMaterial({color:0x7fe9ff, emissive:0x36c9ff, emissiveIntensity:2.2, roughness:0.2, flatShading:true});
+  g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(12, 1), coreM));
+  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(13.6, 1)), new THREE.LineBasicMaterial({color:0x10151a})));
+  const ringM = new THREE.MeshStandardMaterial({color:0x3a3f47, roughness:0.5, metalness:0.6}), nodeM = new THREE.MeshStandardMaterial({color:0x8a2a22, roughness:0.5, metalness:0.4});
   u.rings = [];
-  for (let k = 0; k < 3; k++) { const r = new THREE.Mesh(new THREE.TorusGeometry(17 + k*3, 0.9, 8, 48), new THREE.MeshStandardMaterial({color:0x3a3f47, roughness:0.5, metalness:0.6})); r.rotation.set(k*1.1, k*0.7, 0); g.add(r); u.rings.push(r); }
+  for (let k = 0; k < 3; k++) { const r = new THREE.Group(), B = new Batch(), rad = 17 + k*3;
+    B.add(ringM, flat(new THREE.TorusGeometry(rad, 0.9, 6, 48)));
+    for (let i = 0; i < 6; i++) { const a = i/6*Math.PI*2; B.add(i % 3 ? ringM : nodeM, new THREE.BoxGeometry(2.6, 3.4, 2.4), Math.cos(a)*rad, Math.sin(a)*rad, 0, 0, 0, a); }
+    B.build(r, false); r.rotation.set(k*1.1, k*0.7, 0); g.add(r); u.rings.push(r); }
   u.light = new THREE.PointLight(0x5fd8ff, 2.2, 260, 1.5); g.add(u.light);
   return g;
 }
 function buildGen(){
-  const {rbox, cyl, M} = G.geo, g = new THREE.Group(), u = g.userData;
-  const dk = new THREE.MeshStandardMaterial({color:0x30343b, roughness:0.6, metalness:0.5});
-  g.add(M(cyl(9, 11, 5, 16), dk, 0, 2.5, 0));
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 10, 0, Math.PI*2, 0, Math.PI/2), u.domeM = new THREE.MeshStandardMaterial({color:0x7fe0ff, emissive:0x2bb8ff, emissiveIntensity:1.4, roughness:0.15}));
+  const g = new THREE.Group(), u = g.userData, B = new Batch(), PI = Math.PI;
+  const dk = new THREE.MeshStandardMaterial({color:0x30343b, roughness:0.6, metalness:0.5}), tr = new THREE.MeshStandardMaterial({color:0x191b20, roughness:0.6, metalness:0.5}), rd = new THREE.MeshStandardMaterial({color:0x9a2a22, roughness:0.55, metalness:0.35});
+  const tip = new THREE.MeshBasicMaterial({color:0x9fe8ff});
+  B.add(dk, flat(new THREE.CylinderGeometry(9.6, 11, 3, 8)), 0, 1.5, 0, 0, PI/8, 0); B.add(rd, flat(new THREE.CylinderGeometry(9.2, 9.2, 0.8, 8)), 0, 3.4, 0, 0, PI/8, 0); B.add(tr, flat(new THREE.CylinderGeometry(8, 9, 1.4, 8)), 0, 4.4, 0, 0, PI/8, 0);
+  for (let k = 0; k < 4; k++) { const a = k*PI/2 + PI/4, x = Math.sin(a), z = Math.cos(a); B.add(dk, new THREE.BoxGeometry(1.4, 9, 3.2), x*9, 7, z*9, 0, a + PI/2, 0.22); B.add(tr, new THREE.BoxGeometry(2, 2, 4), x*9.6, 3.6, z*9.6, 0, a + PI/2, 0); B.add(tip, new THREE.BoxGeometry(0.9, 1.6, 1.2), x*8.1, 11.6, z*8.1, 0, a + PI/2, 0); }
+  B.build(g, false);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 10, 0, PI*2, 0, PI/2), u.domeM = new THREE.MeshStandardMaterial({color:0x7fe0ff, emissive:0x2bb8ff, emissiveIntensity:1.4, roughness:0.15}));
   dome.position.y = 5; g.add(dome);
-  u.ring = new THREE.Mesh(new THREE.TorusGeometry(10, 0.8, 6, 32), dk); u.ring.rotation.x = Math.PI/2; u.ring.position.y = 7; g.add(u.ring);
-  for (let k = 0; k < 4; k++) { const a = k*Math.PI/2, f = M(rbox(1.2, 9, 3, 0.2), dk, Math.sin(a)*9, 6, Math.cos(a)*9); f.rotation.y = a; g.add(f); }
+  { const rb = new Batch(); rb.add(dk, flat(new THREE.TorusGeometry(10, 0.8, 6, 32))); for (let i = 0; i < 8; i++) { const a = i/8*PI*2; rb.add(i % 2 ? tr : rd, new THREE.BoxGeometry(2.2, 1.8, 1.8), Math.cos(a)*10, Math.sin(a)*10, 0, 0, 0, a); }
+    u.ring = new THREE.Group(); rb.build(u.ring, false); u.ring.rotation.x = PI/2; u.ring.position.y = 7; g.add(u.ring); }
   return g;
 }
-/* The Dominance: a 420 m Varn battlecruiser. Arrowhead hull with a raised spine, a bridge tower aft, a spinal cannon
-   through the bow, four main engines, a side hangar, and a shield bubble that holds while its generators live. */
+/* The Dominance: a 420 m Varn battlecruiser. A faceted arrowhead hull with a knife-edged armour belt, a raised spine, a forked
+   prow gripping the spinal cannon, drooped weapon wings, a raked bridge tower aft, four main engines, a starboard hangar,
+   and a shield bubble that holds while its generators live. */
 function buildCruiser(){
-  const g = new THREE.Group(), u = g.userData;
-  const tex = hullTexture('#9aa0a8', 'rgba(0,0,0,0.4)', 17); tex.repeat.set(0.02, 0.02); tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  const hullM = new THREE.MeshStandardMaterial({color:0x8c929b, map:tex, roughness:0.5, metalness:0.55}), darkM = new THREE.MeshStandardMaterial({color:0x22262c, roughness:0.6, metalness:0.5});
-  const redM = new THREE.MeshStandardMaterial({color:0x9a2e26, roughness:0.55, metalness:0.3}), lampM = new THREE.MeshBasicMaterial({color:0xffb38a}), engM = new THREE.MeshBasicMaterial({color:0x9fd8ff});
-  const ext = (pts, y0, h, m) => { const sh = new THREE.Shape(); pts.forEach(([x, z], i) => i ? sh.lineTo(x, -z) : sh.moveTo(x, -z));
-    const geo = new THREE.ExtrudeGeometry(sh, {depth:h, bevelEnabled:true, bevelThickness:2, bevelSize:2, bevelSegments:1}); geo.rotateX(-Math.PI/2); geo.translate(0, y0, 0);
-    const mesh = new THREE.Mesh(geo, m); mesh.castShadow = mesh.receiveShadow = true; g.add(mesh); return mesh; };
-  ext([[0, 215], [42, 110], [46, -150], [32, -205], [-32, -205], [-46, -150], [-42, 110]], -22, 44, hullM);                  // main hull
-  ext([[0, 170], [22, 90], [26, -120], [16, -170], [-16, -170], [-26, -120], [-22, 90]], 22, 8, hullM);                      // raised spine
-  ext([[0, 150], [12, 60], [12, -160], [-12, -160], [-12, 60]], -34, 12, darkM);                                             // keel
-  const bx = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; g.add(b); return b; };
-  // swept weapon wings amidships, dark armour belts, a stern dorsal fin and a ventral fin
-  for (const s of [-1, 1]) { const wg = ext([[s*44, 30], [s*96, -70], [s*100, -110], [s*44, -90]].map(([x, z]) => [x, z]), -6, 6, hullM);
-    bx(10, 10, 46, darkM, s*92, -2, -95); bx(4, 4, 30, redM, s*92, 5, -95);
-    for (let z = 150; z > -190; z -= 34) bx(2.5, 30, 22, darkM, s*45.2, -4, z); }
-  { const df = new THREE.Shape(); df.moveTo(0, 0); df.lineTo(-60, 0); df.lineTo(-80, 46); df.lineTo(-44, 46); const dg = new THREE.ExtrudeGeometry(df, {depth:4, bevelEnabled:false}); dg.rotateY(-Math.PI/2); dg.translate(2, 30, -150);
-    const fm = new THREE.Mesh(dg, hullM); fm.castShadow = true; g.add(fm); const vg = dg.clone(); vg.scale(1, -0.6, 1); const vm = new THREE.Mesh(vg, darkM); vm.position.y = 0; g.add(vm); }
-  bx(28, 26, 34, hullM, 0, 44, -110); bx(32, 6, 38, darkM, 0, 59, -110); bx(26, 3, 1, lampM, 0, 52, -92.6);                   // bridge tower and its window band
-  bx(4, 40, 4, darkM, 0, 82, -118); bx(18, 2, 2, darkM, 0, 96, -118);                                                       // mast
-  for (const s of [-1, 1]) { bx(2, 6, 300, redM, s*45.5, 0, -20); bx(1, 2, 260, lampM, s*44.5, 14, -20); }                   // red flank stripes and running lights
-  // spinal cannon: barrel out of the bow with a charge glow at the muzzle
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(6, 8, 70, 16).rotateX(Math.PI/2), darkM); barrel.position.set(0, -2, 230); g.add(barrel);
-  for (let k = 0; k < 4; k++) bx(18, 18, 3, hullM, 0, -2, 205 + k*14);
+  const g = new THREE.Group(), u = g.userData, B = new Batch(), R = rng(1777), PI = Math.PI;
+  const ps = panelSet('hull', 5, {win:0.2, cells:1, depth:7});
+  const std = (o, uv) => { const m = new THREE.MeshStandardMaterial(o); if (uv) m.userData.uv = uv; return m; }, basic = (c, o) => new THREE.MeshBasicMaterial(Object.assign({color:c}, o));
+  const hullM = std({color:0x626871, map:ps.map, normalMap:ps.normalMap, emissive:0xffffff, emissiveMap:ps.emissiveMap, emissiveIntensity:0.9, roughness:0.66, metalness:0.3}, 1/80);
+  const darkM = std({color:0x2e3239, map:ps.map, normalMap:ps.normalMap, roughness:0.7, metalness:0.35}, 1/80), trimM = std({color:0x191b20, roughness:0.6, metalness:0.5});
+  const redM = std({color:0xa02c23, normalMap:ps.normalMap, roughness:0.55, metalness:0.3}, 1/80), hazM = std({map:hazardTex(), roughness:0.7, metalness:0.2}, 1/5);
+  const lampM = basic(0xffb38a), engM = basic(0xc8ecff), hotM = basic(0xff5a2a), bayM = basic(0x2c1709), navR = basic(0xff3a2a), navG = basic(0x58ff8a);
+  const plumeM = basic(0x6fc8ff, {transparent:true, opacity:0.22, depthWrite:false, blending:THREE.AdditiveBlending}), plumeM2 = basic(0xd8f0ff, {transparent:true, opacity:0.4, depthWrite:false, blending:THREE.AdditiveBlending});
+  const bx = (w, h, d, m, x, y, z, ry = 0, rx = 0, rz = 0) => B.add(m, new THREE.BoxGeometry(w, h, d), x, y, z, rx, ry, rz);
+  const zc = (rf, rb, len, seg, m, x, y, z, fl) => { const c = new THREE.CylinderGeometry(rf, rb, len, seg).rotateX(PI/2); B.add(m, fl ? flat(c) : c, x, y, z); };   // a cylinder along z; rf is the forward radius
+  // cross-sections: hull (keel flat, lower chine, belt, upper chine, deck), plus simple rectangles in each plane
+  const hs = (z, wk, wb, wd, yk, yl, yh, yd) => [[wk, yk, z], [wb, yl, z], [wb, yh, z], [wd, yd, z], [-wd, yd, z], [-wb, yh, z], [-wb, yl, z], [-wk, yk, z]];
+  const zs = (z, x0, x1, y0, y1) => [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]];                 // rectangle at a z station
+  const ys = (y, hw, zf, zb, cx = 0) => [[cx + hw, y, zf], [cx + hw, y, zb], [cx - hw, y, zb], [cx - hw, y, zf]];   // rectangle at a height
+  const xs = (x, zf, zb, y0, y1) => [[x, y1, zf], [x, y1, zb], [x, y0, zb], [x, y0, zf]];                  // rectangle at an x station
+  B.add(hullM, loft([hs(206, 7, 13, 9, -11, -6, 2, 8), hs(132, 26, 40, 35.5, -20, -7, 4, 22), hs(40, 32, 47, 43, -22, -7, 5, 22), hs(-150, 34, 47, 43, -22, -7, 5, 22), hs(-206, 24, 36, 32, -17, -6, 6, 20)]));
+  B.add(hullM, loft([[[6, 12, 170], [3, 16.5, 170], [-3, 16.5, 170], [-6, 12, 170]], [[20, 20, 138], [13, 30, 138], [-13, 30, 138], [-20, 20, 138]], [[22, 20, -120], [14, 30, -120], [-14, 30, -120], [-22, 20, -120]], [[14, 20, -178], [9, 27, -178], [-9, 27, -178], [-14, 20, -178]]]));   // raised spine
+  B.add(darkM, loft([[[6, -14, 150], [3, -20, 150], [-3, -20, 150], [-6, -14, 150]], [[14, -19, 100], [8, -31, 100], [-8, -31, 100], [-14, -19, 100]], [[14, -21, -140], [8, -34, -140], [-8, -34, -140], [-14, -21, -140]], [[8, -19, -192], [4, -28, -192], [-4, -28, -192], [-8, -19, -192]]]));   // keel
+  for (const z of [84, 0]) bx(22, 0.9, 34, darkM, 0, 30.3, z); bx(4, 0.6, 250, trimM, 0, 30.2, 0);
+  // forked prow: two jaws either side of the spinal cannon, with glowing rails on their inner faces
+  for (const s of [-1, 1]) { B.add(hullM, loft([zs(150, s*10, s*24, -12, 8), zs(212, s*10.5, s*19, -8, 4), zs(256, s*11, s*13.5, -4, 0)])); bx(0.5, 1.2, 44, hotM, s*10.3, -2, 230); bx(1, 2, 40, redM, s*19.6, -2, 176, -s*0.08); }
+  zc(6, 8, 72, 16, darkM, 0, -2, 230); for (const z of [214, 231, 248]) zc(11.5, 11.5, 3, 8, trimM, 0, -2, z, true); zc(7.4, 7.4, 6, 12, trimM, 0, -2, 264); B.add(basic(0x7a2a12), new THREE.RingGeometry(3.4, 6, 16), 0, -2, 267.1); B.add(basic(0x0a0506), new THREE.CircleGeometry(3.4, 16), 0, -2, 267.1);
+  for (const s of [-1, 1]) bx(0.5, 1, 46, hotM, s*7.2, -2, 226, -s*0.028);
   u.muzzle = new THREE.Object3D(); u.muzzle.position.set(0, -2, 268); g.add(u.muzzle);
   u.chargeM = new THREE.MeshBasicMaterial({color:0xff6a3a, transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending});
   u.charge = new THREE.Mesh(new THREE.SphereGeometry(10, 16, 10), u.chargeM); u.charge.position.copy(u.muzzle.position); g.add(u.charge);
-  // engines
-  for (const [x, y] of [[-24, -8], [24, -8], [-24, 12], [24, 12]]) {
-    const n = new THREE.Mesh(new THREE.CylinderGeometry(11, 13, 24, 16).rotateX(Math.PI/2), darkM); n.position.set(x, y, -214); g.add(n);
-    const gl = new THREE.Mesh(new THREE.CircleGeometry(9.5, 16).rotateY(Math.PI), engM); gl.position.set(x, y, -226.2); g.add(gl);
-    const plume = new THREE.Mesh(new THREE.ConeGeometry(9, 60, 16, 1, true).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({color:0x6fc8ff, transparent:true, opacity:0.35, depthWrite:false, blending:THREE.AdditiveBlending})); plume.position.set(x, y, -258); g.add(plume); }
-  // side hangar (starboard) and its lights; fighters launch from here
-  bx(2, 18, 60, darkM, 46.8, 0, 40); for (let z = 14; z <= 66; z += 8) bx(1, 1.5, 3, lampM, 47.9, 10, z);
+  // drooped weapon wings with tip gun pods, red leading edges and nav lights
+  for (const s of [-1, 1]) {
+    B.add(hullM, loft([xs(s*42, 32, -92, -6, 5), xs(s*98, -66, -110, -9, -5)])); B.add(redM, loft([xs(s*43, 33.6, 29, 2.6, 5.5), xs(s*98.4, -64.6, -69, -7.4, -4.5)]));
+    B.add(darkM, loft([zs(-56, s*96, s*102, -10, -4), zs(-68, s*93, s*105, -13, -1), zs(-112, s*93, s*105, -13, -1), zs(-122, s*95, s*103, -11, -3)]));
+    for (const dx of [-2.6, 2.6]) zc(1.1, 1.3, 28, 8, trimM, s*99 + dx, -7, -44); bx(0.8, 3, 34, redM, s*105.2, -7, -90); bx(0.6, 1, 2.4, s > 0 ? navG : navR, s*105.4, -3, -112);
+    bx(26, 1, 30, darkM, s*62, 1.8, -52, 0, 0, -s*0.18); bx(10, 5, 60, darkM, s*47, -1, -50);
+    // armour belt: slabs, a red line and running lights down each flank
+    for (let z = -140; z <= 0; z += 28) { if (z !== -56 && z !== -28) bx(2, 8, 18, darkM, s*47.2, -2.6, z); bx(0.6, 1, 3, lampM, s*47.5, 3.6, z + 14); }
+    bx(0.8, 1.4, 150, redM, s*47.3, 2, -75);
+    for (const z of [-70, -10, 50, 105]) bx(0.5, 0.6, 38, lampM, s*(z > 60 ? 21.4 : 22.6), 22.2, z);
+    // stern stabilisers
+    B.add(darkM, loft([xs(s*34, -160, -204, 2, 7), xs(s*62, -196, -216, 13, 15)]));
+  }
+  // bridge tower: raked body, overhanging bridge with a window band, mast and aerials
+  B.add(hullM, loft([ys(28, 16, -86, -134), ys(50, 12, -98, -130)])); B.add(hullM, loft([ys(50, 15, -95, -131), ys(54, 18, -90, -133), ys(60, 18, -92, -133), ys(64, 13, -101, -129)]));
+  bx(31, 1.8, 0.6, lampM, 0, 57, -90.7); for (const s of [-1, 1]) { bx(0.6, 1.8, 36, lampM, s*18.1, 57, -112); bx(1, 3, 30, redM, s*14.6, 40, -112, 0, 0, s*0.18); }
+  bx(22, 1.4, 22, trimM, 0, 64.6, -115); bx(3, 34, 3, trimM, 0, 82, -120); bx(16, 1.4, 1.4, trimM, 0, 93, -120); bx(1, 22, 1, trimM, -6, 76, -125); bx(1, 16, 1, trimM, 7, 73, -108); bx(10, 5, 1.6, darkM, 0, 68.5, -106, 0, -0.3);
+  B.add(darkM, loft([ys(28, 9, -130, -150), ys(46, 5, -128, -134)]));
+  // dorsal and ventral fins
+  B.add(hullM, loft([ys(26, 3, -146, -212), ys(78, 1, -196, -232)])); B.add(redM, loft([ys(60, 2, -178.4, -225.4), ys(66, 1.8, -184.2, -227.7)])); B.add(darkM, loft([ys(-20, 3, -150, -205), ys(-50, 1, -185, -220)]));
+  // engines: a dark stern block, four flared nozzles with white-hot throats, and layered plumes
+  B.add(trimM, loft([hs(-204, 22, 33, 29, -15, -5, 5, 18), hs(-215, 20, 30, 26, -13, -4, 4, 16)])); bx(2, 34, 14, trimM, 0, 1, -216); bx(60, 2, 14, trimM, 0, 1, -216);
+  for (const [x, y] of [[-21, -7], [21, -7], [-19, 9.5], [19, 9.5]]) { zc(9, 11.5, 22, 16, darkM, x, y, -219); zc(11.8, 12, 3, 16, trimM, x, y, -229);
+    B.add(engM, new THREE.CircleGeometry(9.6, 16).rotateY(PI), x, y, -227); B.add(plumeM, new THREE.ConeGeometry(10, 80, 16, 1, true).rotateX(-PI/2), x, y, -270); B.add(plumeM2, new THREE.ConeGeometry(6, 38, 12, 1, true).rotateX(-PI/2), x, y, -248); }
+  // starboard hangar (fighters launch from here) and a port sensor blister
+  bx(8, 20, 72, darkM, 46.4, -1, 40); bx(0.3, 12, 54, bayM, 50.5, -1, 40); bx(0.4, 1, 54, lampM, 50.6, -6.4, 40); for (const dz of [-28.5, 28.5]) bx(0.5, 12, 3, hazM, 50.6, -1, 40 + dz);
+  for (let z = 14; z <= 66; z += 8) bx(1, 1.5, 3, lampM, 50.5, 7, z); for (let z = 22; z <= 58; z += 9) bx(0.4, 9, 0.8, lampM, 50.6, -0.5, z);
+  for (let z = -120; z <= 90; z += 30) { bx(0.8, 0.5, 7, lampM, 0, -34.2, z); for (const s of [-1, 1]) bx(0.6, 0.6, 3, z % 60 ? lampM : navR, s*29, -22.2, z + 10); }
   u.bay = new THREE.Object3D(); u.bay.position.set(60, 0, 40); g.add(u.bay);
+  bx(6, 14, 52, darkM, -46, -1, 40); bx(0.8, 2, 46, redM, -49.2, -1, 40); for (const z of [22, 40, 58]) B.add(trimM, new THREE.SphereGeometry(3.2, 10, 6), -48.6, 4, z);
+  // mounts (local): heavy turrets along the flanks, missile batteries on the spine, three shield generators; each sits on a barbette
+  u.mounts = {flak:[[-30, 22, 125], [30, 22, 125], [-36, 22, 40], [36, 22, 40], [-38, 22, -50], [38, 22, -50], [-34, 22, -150], [34, 22, -150]],
+    mis:[[0, 30, 120], [0, 30, -40]], gen:[[0, 30, 40], [-30, 22, -100], [30, 22, -100]]};
+  const all = [...u.mounts.flak, ...u.mounts.mis, ...u.mounts.gen];
+  u.mounts.flak.forEach(([x, y, z]) => B.add(trimM, flat(new THREE.CylinderGeometry(6, 7, 1, 8)), x, y + 0.2, z, 0, PI/8, 0));
+  [...u.mounts.mis, ...u.mounts.gen].forEach(([x, y, z]) => { B.add(trimM, flat(new THREE.CylinderGeometry(12.5, 13.5, 1, 8)), x, y + 0.2, z, 0, PI/8, 0); B.add(redM, flat(new THREE.CylinderGeometry(13.8, 13.8, 0.5, 8)), x, y - 0.1, z, 0, PI/8, 0); });
+  // deck and belly clutter (kept clear of the mounts and the tower)
+  for (let i = 0; i < 150; i++) { const z = -150 + R()*270, s = R() < 0.5 ? -1 : 1, wd = z > 40 ? 43 - (z - 40)/92*7.5 : 43, w = 3 + R()*8, d = 4 + R()*14, h = 0.8 + R()*2.4, x = s*(25 + R()*(wd - 27 - w/2));
+    if (all.some(([mx, , mz]) => Math.hypot(mx - x, mz - z) < 17 + d/2)) continue; bx(w, h, d, R() < 0.5 ? darkM : hullM, x, 22 + h/2, z); if (R() < 0.3) bx(w*0.4, 0.8, d*0.6, trimM, x, 22 + h + 0.4, z); }
+  for (let i = 0; i < 50; i++) { const z = -140 + R()*240, s = R() < 0.5 ? -1 : 1, w = 3 + R()*7, d = 5 + R()*16, h = 0.8 + R()*2, x = s*(16 + R()*(z > 40 ? 6 : 12)); bx(w, h, d, R() < 0.6 ? darkM : hullM, x, -22 - h/2 + (z > 40 ? (z - 40)/92*2 + 0.4 : 0), z); }
+  for (const z of [60, -60]) { B.add(trimM, new THREE.SphereGeometry(5, 12, 6, 0, PI*2, PI/2, PI/2), 0, -34, z); }
+  B.build(g);
   // shield bubble
   u.shieldM = new THREE.ShaderMaterial({transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, uniforms:{a:{value:1}, t:{value:0}},
     vertexShader:'varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ vec4 mv = modelViewMatrix*vec4(position,1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz); vP = position; gl_Position = projectionMatrix*mv; }',
     fragmentShader:'uniform float a; uniform float t; varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.5); float hx = 0.5 + 0.5*sin(vP.z*0.25 + t*3.0)*sin(vP.x*0.4 + vP.y*0.4); gl_FragColor = vec4(vec3(0.35,0.8,1.0)*(f*1.2 + 0.05 + 0.08*hx), (f*0.9 + 0.04)*a); }'});
   u.shield = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 24), u.shieldM); u.shield.scale.set(80, 70, 260); g.add(u.shield);
-  // mounts (local): heavy turrets along the flanks, missile batteries on the spine, three shield generators
-  u.mounts = {flak:[[-30, 22, 125], [30, 22, 125], [-36, 22, 40], [36, 22, 40], [-38, 22, -50], [38, 22, -50], [-34, 22, -150], [34, 22, -150]],
-    mis:[[0, 30, 120], [0, 30, -40]], gen:[[0, 30, 40], [-30, 22, -100], [30, 22, -100]]};
   return g;
 }
 
