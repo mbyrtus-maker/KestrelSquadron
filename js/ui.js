@@ -4,6 +4,7 @@ const G = window.G, V3 = THREE.Vector3, $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]));
 
 /* ---------- Input ---------- */
+const VOLNAME = {2:'Ascendant', 3:'Harbinger', 4:'Orbit'};
 const I = G.input = {keys:new Set(), pressed:new Set(), mx:0, my:0, lmb:false, rmb:false, an:{}, look:null, pad:false};
 const GAME_KEYS = ['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyF', 'KeyQ', 'KeyR', 'KeyV', 'KeyC', 'KeyG', 'KeyB', 'KeyX', 'KeyZ', 'KeyT', 'KeyJ', 'KeyE', 'KeyH', 'KeyN', 'KeyM'];
 addEventListener('keydown', e => {
@@ -155,8 +156,9 @@ const bar = (v, lbl) => `<div class="fbar"><span>${lbl}</span><i><i style="width
 const GRADE = {perfect:'Perfect', success:'Success', fail:'Failure'};
 const WSTAT = {active:'Available', captured:'Captured', kia:'Killed in action', locked:'Not yet in the squadron'};
 function arkQuip(st){
-  if (st.ending) { const v = G.ENDINGS[st.ending].vol; return v === 3 ? 'Three wars. I am going to sleep for a month. Don’t call me.' : v === 2 ? 'Two wars, two medals, one very tired operations officer.' : 'The war is over. Don’t get comfortable. I certainly won’t let you.'; }
+  if (st.ending) { const v = G.ENDINGS[st.ending].vol; return v === 4 ? 'You went to space. I can’t top that. I’m not going to try.' : v === 3 ? 'Three wars. I am going to sleep for a month. Don’t call me.' : v === 2 ? 'Two wars, two medals, one very tired operations officer.' : 'The war is over. Don’t get comfortable. I certainly won’t let you.'; }
   if (st.node === 'v3n1') return 'A year of quiet. I knew it couldn’t last. Sit. Read.';
+  if (st.node === 'v4n1') return 'Look up, Kestrel. No, further. That’s where we’re going.';
   if (st.node === 'v2n1') return 'Six months of peace. I was starting to like it. Sit down, something has come up.';
   if (!st.log.length) return 'You’re late. The briefing is on the table. Read it before you ask me questions I’ve already answered.';
   const last = st.log[st.log.length - 1].grade;
@@ -177,15 +179,16 @@ function storyPanel(){
   if (st.ending) {
     const E = G.ENDINGS[st.ending];
     h += `<article class="sortie story"><div class="s-top"><span class="s-tag">Volume ${E.vol || 1} complete</span><span class="threat">${esc(E.grade)}</span></div><h3>${esc(E.title)}</h3>
-      ${E.text(st).map(t => `<p class="s-brief">${esc(t)}</p>`).join('')}<div class="s-foot" style="flex-wrap:wrap;gap:8px"><button class="ghost" data-story="reset">Replay from Volume 1</button>${(E.vol || 1) >= 2 ? `<button class="ghost" data-story="vol" data-v="2">Replay Volume 2</button>` : ''}${(E.vol || 1) >= 3 ? `<button class="launch" data-story="vol" data-v="3">Replay Volume 3</button>` : `<button class="launch" data-story="vol" data-v="${(E.vol || 1) + 1}">Begin Volume ${(E.vol || 1) + 1} · ${(E.vol || 1) === 1 ? 'Ascendant' : 'Harbinger'}</button>`}</div></article>`;
+      ${E.text(st).map(t => `<p class="s-brief">${esc(t)}</p>`).join('')}<div class="s-foot" style="flex-wrap:wrap;gap:8px"><button class="ghost" data-story="reset">Replay from Volume 1</button>${[2, 3, 4].filter(v => v <= (E.vol || 1)).map(v => `<button class="ghost" data-story="vol" data-v="${v}">Replay Volume ${v}</button>`).join('')}${(E.vol || 1) < 4 ? `<button class="launch" data-story="vol" data-v="${(E.vol || 1) + 1}">Begin Volume ${(E.vol || 1) + 1} · ${VOLNAME[(E.vol || 1) + 1]}</button>` : ''}</div></article>`;
     if (!E.vol) h += `<p class="panel-note">Volume 2 · Ascendant: five new missions. Six months after the armistice, something enormous crosses Cinder Reach. Your wingmen and story choices carry over.</p>`;
     if (E.vol === 2) h += `<p class="panel-note">Volume 3 · Harbinger: five new missions. The Varn have rebuilt a salvaged Kestrel three times over, as a bomber that stands up and walks.</p>`;
+    if (E.vol === 3) h += `<p class="panel-note">Volume 4 · Orbit: three missions in space. Clear orbit, board the Varn station and blow its core, then face the battlecruiser Dominance.</p>`;
   } else {
     const m = G.storyMission(st.node), node = G.STORY[st.node];
     h += `<article class="sortie story"><div class="s-top"><span class="s-tag">${esc(node.chapter)}</span><span class="threat">Mission ${G.storyStep()}</span></div>
       <h3>${esc(m.title)}</h3><p class="s-place">${esc(m.place)} · Wingman: ${esc(G.WINGMEN[m.wing].name)}</p>
       <p class="s-threat threat">Threat <b>${'■'.repeat(m.tier)}<s>${'■'.repeat(3 - m.tier)}</s></b> <span>${['', 'Low', 'Moderate', 'High'][m.tier]}</span></p><p class="s-brief">“${esc(m.briefLines[0])}”</p>
-      <ol class="s-wps">${m.tasks.map((t, i) => `<li><b>WP${i + 1}</b><span>${esc(G.taskText(t))}</span></li>`).join('')}<li><b>RTB</b><span>Return to the Bastion</span></li></ol>
+      <ol class="s-wps">${m.tasks.map((t, i) => `<li><b>WP${i + 1}</b><span>${esc(G.taskText(t))}</span></li>`).join('')}<li><b>RTB</b><span>${m.space ? 'Burn for home' : 'Return to the Bastion'}</span></li></ol>
       <div class="s-foot"><div class="pay"><b>${G.money(m.reward)}</b><small>${m.xp} XP · +${G.money(m.perfectBonus)} if perfect</small></div><button class="launch" data-brief="1">Briefing</button></div></article>`;
   }
   h += `<h4 class="ph">Wingmen</h4>${wingCards(st, false)}`;
@@ -199,7 +202,7 @@ function showBriefing(){
   overlay(`<div class="br-grid"><div class="br-por">${G.portrait(node.mood)}<p class="br-name">${esc(G.OFFICER.name)}<small>${esc(G.OFFICER.role)}</small></p></div>
     <div class="br-text"><small class="br-ch">${esc(node.chapter)} · ${esc(m.place)}</small><h2>${esc(m.title)}</h2>
     ${m.briefLines.map(l => `<p class="quote">${esc(l)}</p>`).join('')}
-    <h4 class="ph">Waypoints</h4><ol class="s-wps">${m.tasks.map((t, i) => `<li><b>WP${i + 1}</b><span>${esc(G.taskText(t))}</span></li>`).join('')}<li><b>RTB</b><span>Return to the Bastion</span></li></ol>
+    <h4 class="ph">Waypoints</h4><ol class="s-wps">${m.tasks.map((t, i) => `<li><b>WP${i + 1}</b><span>${esc(G.taskText(t))}</span></li>`).join('')}<li><b>RTB</b><span>${m.space ? 'Burn for home' : 'Return to the Bastion'}</span></li></ol>
     <h4 class="ph">For a perfect grade</h4><ul class="s-sides">${m.sides.map(sd => `<li><span>${esc(G.sideLabel(sd))}</span><b>+${G.money(sd.cash)}</b></li>`).join('')}</ul>
     <div class="br-pay"><div><small>Reward</small><b>${G.money(m.reward)}</b></div><div><small>Perfect bonus</small><b>+${G.money(m.perfectBonus)}</b></div><div><small>Experience</small><b>${m.xp} XP</b></div></div>
     <h4 class="ph">Wingman</h4><div class="br-wings">${wingCards(st, true)}</div>
@@ -209,7 +212,7 @@ function showEnding(key){
   const E = G.ENDINGS[key], st = G.save.story;
   overlay(`<div class="br-grid"><div class="br-por">${G.portrait(E.mood)}<p class="br-name">${esc(G.OFFICER.name)}</p></div><div class="br-text"><small class="br-ch">Volume ${E.vol || 1} complete · ${esc(E.grade)}</small><h2>${esc(E.title)}</h2>
     ${E.text(st).map(t => `<p>${esc(t)}</p>`).join('')}<h4 class="ph">Your war</h4><ol class="slog">${st.log.map(l => `<li><span>${esc(l.title)}</span><b class="grade g-${l.grade}">${GRADE[l.grade]}</b></li>`).join('')}</ol>
-    ${(E.vol || 1) < 3 ? `<p>Volume ${(E.vol || 1) + 1} · ${(E.vol || 1) === 1 ? 'Ascendant' : 'Harbinger'} is now open in the Story tab.</p>` : ''}<div class="ov-actions"><button data-act="close">Back to the hangar</button></div></div></div>`, 'wide brief');
+    ${(E.vol || 1) < 4 ? `<p>Volume ${(E.vol || 1) + 1} · ${VOLNAME[(E.vol || 1) + 1]} is now open in the Story tab.</p>` : ''}<div class="ov-actions"><button data-act="close">Back to the hangar</button></div></div></div>`, 'wide brief');
 }
 
 function renderPanel(){
@@ -228,7 +231,7 @@ function renderPanel(){
       <div class="s-top"><span class="s-tag">${esc(m.tag)}</span><span class="threat" title="Threat ${m.tier} of 3">Threat <b>${'■'.repeat(m.tier)}<s>${'■'.repeat(3 - m.tier)}</s></b></span></div>
       <h3>${esc(m.title)}</h3><p class="s-place">${esc(m.place)}</p>
       <p class="s-brief">${esc(m.brief)}</p>
-      ${m.tasks ? `<ol class="s-wps">${m.tasks.map((t, i) => `<li><b>WP${i + 1}</b><span>${esc(G.taskText(t))}</span></li>`).join('')}<li><b>RTB</b><span>Return to the Bastion</span></li></ol>` : ''}
+      ${m.tasks ? `<ol class="s-wps">${m.tasks.map((t, i) => `<li><b>WP${i + 1}</b><span>${esc(G.taskText(t))}</span></li>`).join('')}<li><b>RTB</b><span>${m.space ? 'Burn for home' : 'Return to the Bastion'}</span></li></ol>` : ''}
       <ul class="s-sides">${m.sides.map(sd => `<li><span>${esc(G.sideLabel(sd))}</span><b>+${G.money(sd.cash)} · ${sd.xp} XP</b></li>`).join('')}</ul>
       <div class="s-foot"><div class="pay"><b>${G.money(m.reward)}</b><small>${m.xp} XP</small></div><button class="launch" data-launch="${m.id}">Launch</button></div>
     </article>`).join('');

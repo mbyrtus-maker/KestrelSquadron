@@ -1,6 +1,6 @@
 # Kestrel Squadron
 
-A 3D browser game about a transforming fighter: fly the AVF-1 Kestrel as a jet, a hover gunship (gerwalk) and a mech against the Varn Hegemony's invasion of the Halcyon archipelago. A story campaign in three volumes (the Hollow Crown, the flying carrier Ascendant, and the transforming bomber Harbinger), free sorties, upgrades and frames, two-player co-op, and controller support.
+A 3D browser game about a transforming fighter: fly the AVF-1 Kestrel as a jet, a hover gunship (gerwalk) and a mech against the Varn Hegemony's invasion of the Halcyon archipelago. A story campaign in four volumes (the Hollow Crown, the flying carrier Ascendant, the transforming bomber Harbinger, and Orbit: a space station raid and the battlecruiser Dominance), free sorties, upgrades and frames, two-player co-op, and controller support.
 
 **Play:** https://mbyrtus-maker.github.io/KestrelSquadron/ (once GitHub Pages is turned on for this repository: Settings → Pages → Deploy from branch `main`, folder `/`).
 

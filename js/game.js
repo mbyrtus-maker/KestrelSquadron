@@ -18,7 +18,7 @@ G.Game = class {
     this.m = m; const scene = this.scene = new THREE.Scene(); if (G.env) scene.environment = G.env;
     this.camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 24000); this.camera.rotation.order = 'YXZ';
     const L = G.planMission(m);
-    this.world = new G.World(scene, {seed:m.seed, flats:L.flats});
+    G.stationLive = false; this.world = m.space ? new G.SpaceWorld(scene, {seed:m.seed, station:m.station}) : new G.World(scene, {seed:m.seed, flats:L.flats});
     this.fx = new G.FX(scene); this.tracers = new G.Tracers(scene, 700);
     this.dying = []; this.bombsLive = [];
     this.ents = []; this.bullets = []; this.missiles = []; this.flares = []; this.civGroups = []; this.waypoints = [];
@@ -28,6 +28,9 @@ G.Game = class {
     if (L.carrier) { this.world.carrier = G.CARRIER; this.carrierMesh = G.buildCarrier(); this.carrierMesh.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true; }); scene.add(this.carrierMesh); }
     this.player = new G.Player(this); this.wing = new G.Wingman(this);
     this.marks = [];
+    if (m.space) {   // space sorties start in flight, already in orbit
+      const P = this.player, S = m.startAt || {x:0, y:120, z:-5200}; P.pos.set(S.x, S.y, S.z); P.yaw = S.yaw || 0; P.pitch = 0; P.speed = 190; P.vel.set(0, 0, 190); P.throttle = 0.65;
+      this.wing.pos.set(S.x - 40, S.y + 6, S.z - 40); this.wing.dir.set(0, 0, 1); }
     if (m.type === 'training') { this.training = new G.Training(this); } else G.spawnMission(this, L);
     this.hullStart = this.player.hp/this.player.maxHp;
     this.resize();
@@ -74,7 +77,7 @@ G.Game = class {
     this.updateBullets(dt); this.updateMissiles(dt); this.updateBombs(dt); this.updateFlares(dt);
     this.fx.update(dt); this.tracers.draw(this.bullets);
     if (this.skyFall) G.skyFall(this, dt);
-    G.updatePickups(this, dt); G.deckRepair(this, dt); G.xray(this, dt);
+    G.updatePickups(this, dt); G.deckRepair(this, dt); G.xray(this, dt); if (this.world.space) G.spaceTick(this, dt);
     for (let i = this.dying.length - 1; i >= 0; i--) {
       const d = this.dying[i]; d.t += dt; d.U.mixer.update(dt);
       if (d.t > 1.2 && !d.charred) { d.charred = true; d.mesh.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) { m.color.multiplyScalar(0.28); if (m.emissive) m.emissive.setHex(0); } }); }
@@ -236,7 +239,7 @@ G.Game = class {
   damageEnt(e, amt, by, info){
     if (!e.alive) return;
     if (e.armored) {   // the Ascendant's reactor: sealed behind its petals until the engines are gone (and the Harbinger while it transforms)
-      e.hitT = 0.12; if (by === 'player' && e.type !== 'harbinger' && this.time - (this.armTip || -99) > 12) { this.armTip = this.time; G.hud.flash('REACTOR SEALED · DESTROY THE SIX ENGINES'); G.audio.impact('metal', 0.6); }
+      e.hitT = 0.12; if (by === 'player' && e.type !== 'harbinger' && this.time - (this.armTip || -99) > (e.armorMsg ? 6 : 12)) { this.armTip = this.time; G.hud.flash(e.armorMsg || 'REACTOR SEALED · DESTROY THE SIX ENGINES'); G.audio.impact('metal', 0.6); }
       return;
     }
     // Heavy buildings shrug off everything but bombs: other weapons can't take them below 40%.

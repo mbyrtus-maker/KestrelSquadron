@@ -65,7 +65,8 @@ G.Player = class {
 
     if (this.mode !== 'jet' && g.world.pushOut(this.pos, 4.5, this.pos.y - G.CLEAR[this.mode])) { this.vel.x *= 0.5; this.vel.z *= 0.5; }
     const h = g.world.height(this.pos.x, this.pos.z);
-    const gh = this.gh = this.mode === 'mech' ? Math.max(h, -3) : Math.max(h, 0.4);
+    const space = g.world.space, zeroG = this.zeroG = space && !(G.inStation && G.inStation(this.pos));   // space: no sea level; outside the station's hangar, no gravity
+    const gh = this.gh = space ? h : this.mode === 'mech' ? Math.max(h, -3) : Math.max(h, 0.4);
     const clr = G.CLEAR[this.mode]; this.agl = this.pos.y - gh - clr;
     const inv = G.save.invert ? -1 : 1, F = this.F, root = F.root;
     this.boost = !!(K('ShiftLeft') || K('ShiftRight'));
@@ -78,7 +79,7 @@ G.Player = class {
       const pitchIn = (my*0.95*st.agility + (K('ArrowUp') - K('ArrowDown'))*0.7)*inv;
       const resp = Math.min(1, dt*2.6);
       this.yawRate += (turnIn - this.yawRate)*resp; this.pitchRate += (pitchIn - this.pitchRate)*resp;
-      const auth = clamp((this.speed - 55)/60, 0.35, 1), stall = clamp((85 - this.speed)/30, 0, 1);
+      const auth = clamp((this.speed - 55)/60, 0.35, 1), stall = zeroG ? 0 : clamp((85 - this.speed)/30, 0, 1);
       // Bank-and-pull: sideways input banks hard (up to ~80 deg at the screen edge) and turns; the pitch input acts in the
       // cockpit frame, so pulling while banked tightens the turn toward the low wing instead of climbing.
       // rb is the roll the jet settles to with no stick: 0 upright, pi inverted (after going over the top of a loop)
@@ -93,13 +94,14 @@ G.Player = class {
       this.throttle = clamp(this.throttle + (K('KeyW') - K('KeyS'))*0.5*dt, 0, 1);
       const target = (75 + this.throttle*145)*st.speed*(this.boost ? 1.32 : 1);
       this.speed += clamp(target - this.speed, -22*dt, 28*dt);
-      this.speed = Math.max(45, this.speed - Math.sin(this.pitch)*48*dt);
+      if (!zeroG) this.speed = Math.max(45, this.speed - Math.sin(this.pitch)*48*dt);
       this.vel.copy(this.fwd(tA)).multiplyScalar(this.speed);
-      this.vel.y -= stall*22 + 2;
+      if (!zeroG) this.vel.y -= stall*22 + 2;
       this.pos.addScaledVector(this.vel, dt);
       this.stall = stall;
       thrust = 0.3 + this.throttle*0.45 + (this.boost ? 0.45 : 0);
-      if (this.pos.y < gh + clr) {
+      if (space && zeroG && this.pos.y < gh + clr) { this.pos.y = gh + clr; this.pitch = Math.max(this.pitch, 0.25); if (g.time - (this.floorT || -9) > 3) { this.floorT = g.time; G.hud.flash('EDGE OF THE BATTLE SPACE · CLIMB'); } }
+      else if (this.pos.y < gh + clr) {
         const impact = this.speed*Math.max(0.25, -Math.sin(this.pitch));
         this.damage(impact*4, null, 'crash'); this.pos.y = gh + clr + 1.5; this.pitch = Math.max(this.pitch, 0.3); this.rb = 0; this.shake += 1.2;
         G.hud.flash('TERRAIN IMPACT'); g.fx.explosion(this.pos, 0.6);
@@ -132,7 +134,7 @@ G.Player = class {
         F.ctl.lp += (af - F.ctl.lp)*lk; F.ctl.lr += (ar - F.ctl.lr)*lk; F.ctl.lt += (clamp((this.yawRate + (this.lookRate || 0)*0.5)*0.8, -1, 1) - F.ctl.lt)*lk;
         this.vel.x += (dx - this.vel.x)*k; this.vel.z += (dzv - this.vel.z)*k;
         const up = K('Space') - (K('KeyC') ? 1 : 0);
-        this.vel.y += ((up > 0 ? 22 : up < 0 ? -20 : -1.5) - this.vel.y)*Math.min(1, dt*0.9);
+        this.vel.y += ((up > 0 ? 22 : up < 0 ? -20 : zeroG ? 0 : -1.5) - this.vel.y)*Math.min(1, dt*0.9);
         this.pos.addScaledVector(this.vel, dt);
         if (this.pos.y < gh + clr) {
           if (this.vel.y < -26) { this.damage((-this.vel.y - 26)*14, null, 'fall'); G.hud.flash('HARD LANDING'); this.shake += 1; }
@@ -306,6 +308,7 @@ G.Player = class {
     if (this.gpwsGrace > 0) { this.gpwsGrace -= 1/60; this.gpws = 0; this.pullUp = false; return; }
     const W = this.g.world, clr = G.CLEAR[this.mode], v = this.vel; let tt = 99;
     if (this.mode === 'mech') { this.gpws = 0; this.pullUp = false; return; }   // mech can't fly: no terrain warnings
+    if (this.zeroG) { this.gpws = 0; this.pullUp = false; return; }   // nothing to fly into in open space
     const pad = this.mode === 'jet' ? 18 : 1.5, horizon = this.mode === 'jet' ? 7 : 5;
     for (let t = 0.25; t <= horizon; t += 0.25) {
       const px = this.pos.x + v.x*t, pz = this.pos.z + v.z*t;

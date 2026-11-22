@@ -242,7 +242,7 @@ const H = G.hud = {
     $('hSides').innerHTML = game.m.sides.map((s, i) => `<li data-i="${i}"><span class="st"></span>${G.sideLabel(s)}</li>`).join('');
     $('hTrain').hidden = !game.training; $('hSides').hidden = !!game.training;
     const wl = $('hWps'); wl.hidden = !game.ops;
-    if (game.ops) wl.innerHTML = game.ops.tasks.map(T => `<li data-i="${T.i}"><span class="wn">WP${T.i + 1}</span><span class="wt"></span><b class="wp"></b></li>`).join('') + '<li data-i="rtb"><span class="wn">RTB</span><span class="wt">Return to the Bastion</span><b class="wp"></b></li>';
+    if (game.ops) wl.innerHTML = game.ops.tasks.map(T => `<li data-i="${T.i}"><span class="wn">WP${T.i + 1}</span><span class="wt"></span><b class="wp"></b></li>`).join('') + `<li data-i="rtb"><span class="wn">RTB</span><span class="wt">${game.world.space ? 'Burn for home' : 'Return to the Bastion'}</span><b class="wp"></b></li>`;
     if (game.ops) game.ops.tasks.forEach(T => { wl.children[T.i].querySelector('.wt').textContent = G.TASKS[T.kind].short + ' · ' + T.place; });
     $('hRadio').innerHTML = ''; $('hFeed').innerHTML = ''; this.radioList = []; this.feedList = [];
     $('hWingName').textContent = game.wing.name;
@@ -469,7 +469,7 @@ const H = G.hud = {
     x.textAlign = 'center';
     if (warn && (performance.now() % 600) < 420) { x.font = '600 26px "Saira Extra Condensed", "Arial Narrow", sans-serif'; x.fillStyle = wc; x.fillText(warn, cx, Hh*0.27); }
     // Boss health bar (the Sovereign, Hollow): top centre while the boss is alive and engaged.
-    { const B = [game.harbinger, game.skycarrier, game.sovereign, game.hollow].find(b => b && b.alive);
+    { const B = [game.cruiser, game.harbinger, game.skycarrier, game.sovereign, game.hollow].find(b => b && b.alive);
       if (B) { const bw = Math.min(560, W*0.5), bx = cx - bw/2, by = 58, f = Math.max(0, B.hp/B.maxHp), half = B.type === 'colossus';
         x.save(); x.globalAlpha = 0.92; x.fillStyle = 'rgba(10,12,14,0.55)'; x.fillRect(bx - 4, by - 4, bw + 8, 18);
         x.fillStyle = f < 0.5 ? '#ff5a3c' : '#ffb238'; x.fillRect(bx, by, bw*f, 10);
@@ -479,7 +479,8 @@ const H = G.hud = {
         x.font = '600 15px "Saira Extra Condensed", "Arial Narrow", sans-serif'; x.textAlign = 'center'; x.fillStyle = '#ffe2c0';
         let lab = B.bossBar || (B.boss ? 'HOLLOW' : B.name.toUpperCase());
         if (B.fm) lab += ` · ${B.fm.toUpperCase()} MODE${B.armored ? ' · TRANSFORMING' : ''}`;
-        if (B.parts) { const n = B.parts.filter(p => p.type === 'skyengine' && p.alive).length; lab += n ? ` · ENGINES ${n}/6 · REACTOR SEALED` : ' · REACTOR EXPOSED'; }
+        if (B.type === 'cruiser') { const n = B.parts.filter(p => p.type === 'shieldgen' && p.alive).length; lab += n ? ` · GENERATORS ${n}/3 · SHIELD UP` : ' · SHIELD DOWN'; }
+        if (B.parts && B.type === 'skycarrier') { const n = B.parts.filter(p => p.type === 'skyengine' && p.alive).length; lab += n ? ` · ENGINES ${n}/6 · REACTOR SEALED` : ' · REACTOR EXPOSED'; }
         x.fillText(lab, cx, by - 9); x.restore(); x.textAlign = 'center'; } }
     if (this.flashT > 0) { this.flashT -= dt; x.font = '600 22px "Saira Extra Condensed", "Arial Narrow", sans-serif'; x.fillStyle = col; x.globalAlpha = Math.min(1, this.flashT); x.fillText(this.flashText, cx, Hh*0.33); x.globalAlpha = 1; }
     if (game.complete && P.alive) { const hold = game.holdRTB && game.holdRTB(); x.font = '600 18px "Saira Extra Condensed", "Arial Narrow", sans-serif'; x.fillStyle = hold ? RED : '#6dff9a'; x.fillText(hold ? 'RED TAILS OVERHEAD · DRIVE HOLLOW OFF BEFORE LANDING' : 'OBJECTIVE COMPLETE · PRESS R TO RETURN TO BASE', cx, 66); }
@@ -717,7 +718,7 @@ const H = G.hud = {
     if (game.ops) {
       const O = game.ops, wl = $('hWps');
       const cur = O.tasks[O.cur];
-      const goal = O.rtb ? 'Return to the Bastion and set down on the deck' : cur ? G.taskText(cur) : '';
+      const goal = O.rtb ? (game.world.space ? 'Objectives complete · burning for home' : 'Return to the Bastion and set down on the deck') : cur ? G.taskText(cur) : '';
       if ($('hGoal').textContent !== goal) $('hGoal').textContent = goal;
       O.tasks.forEach(T => { const li = wl.children[T.i]; if (!li) return; li.dataset.st = T.done ? 'ok' : T === cur ? 'cur' : 'todo';
         const [d, n] = O.progress(T); const pt = T.done ? 'done' : T.kind === 'patrol' ? (T.arrived ? (T.hostiles ? `${d}/${n}` : 'clear') : '') : `${d}/${n}`;

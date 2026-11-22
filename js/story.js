@@ -339,6 +339,51 @@ N.v3n5 = {vol:3, chapter:'Vol. 3 · Chapter 5 · Harbinger', title:'Harbinger', 
     success:{mood:'pleased', say:'The Harbinger is in pieces on the Halvorsen hills. It’s over. It’s really over.', next:'end:v3victory'},
     fail:{mood:'angry', say:'It reached the port. The docks are burning, but the Bastion got out. We are not done.', next:'end:v3lost'}
   }};
+/* ---------- Volume 4 · Orbit ----------
+   The war goes up. Clear the Varn fighters out of orbit, board their station, blow its core and get out, then face the
+   battlecruiser Dominance. These sorties fly in space: no gravity outside the station, and mech mode only on its deck. */
+N.v4n1 = {vol:4, space:true, station:true, chapter:'Vol. 4 · Chapter 1 · Ascent', title:'Ascent', place:'low orbit over Halcyon', tier:3, pay:5.0, seed:830144, wing:null,
+  tasks:[{kind:'air', n:6, place:'the orbital approach', at:{x:-1900, z:-2400}, y:200}, {kind:'air', n:7, place:'the station picket', at:{x:1700, z:-300}, y:250},
+    {kind:'rival', n:1, place:'the station’s shadow', at:{x:-600, z:300}, who:'Vesper', escorts:2, hpMul:6, hello:'Welcome to orbit, {cs}. Up here there is no ground to save you.', lastWords:'The stars... are cold...'}],
+  sides:[{key:'hull'}, {key:'wingman'}], mood:'stern',
+  brief:() => [`The Varn have a station in orbit, ${cs()}. We think every invasion they've thrown at us was planned and supplied from up there.`,
+    'The Bastion’s engineers bolted orbital boosters to your Kestrel last night. You fly up, you clear their fighters out of orbit, and you stay alive. In that order of importance, reversed.',
+    'No air up there, so no stalling and no falling. Your jet will keep going where you point it. Mech mode needs a deck under it, and the only deck is theirs.'],
+  radio:{start:'Lantern to Kestrel. You are the first Republic pilot in orbit. Try to enjoy the view for one second.', done:{0:'First wave down. More inbound from the station.', 1:'Picket’s broken. Someone else is coming out to meet you. Red stripes.'}},
+  out:{
+    perfect:{mood:'pleased', say:'Orbit is ours. Their fighters are gone and their ace is drifting. Next, the station itself.', then:'The Varn station Tessaract loses its fighter cover.', flags:{orbitClear:1}, next:'v4n2'},
+    success:{mood:'stern', say:'You cleared the way. Their ace went down with them. The station is next.', then:'The Republic holds low orbit.', next:'v4n2'},
+    fail:{mood:'angry', say:'They held orbit, and their ace got away. We go back up anyway.', then:'Vesper survives to fly again.', flags:{vesperAlive:1}, next:'v4n2'}
+  }};
+N.v4n2 = {vol:4, space:true, station:true, chapter:'Vol. 4 · Chapter 2 · Tessaract', title:'Tessaract', place:'the Tessaract', tier:3, pay:5.4, seed:271830, wing:null,
+  startAt:{x:0, y:80, z:-4200},
+  tasks:f => [{kind:'stationguns', n:6, place:'the Tessaract'}, {kind:'air', n:f.orbitClear ? 3 : 6, place:'the Tessaract', at:{x:-700, z:500}, y:120},
+    {kind:'dock', n:1, place:'the Tessaract'}, {kind:'bots', n:f.orbitClear ? 7 : 8, place:'the Tessaract'}, {kind:'core', n:1, place:'the Tessaract'}, {kind:'escape', n:1, place:'the Tessaract'}],
+  sides:[{key:'hull'}, {key:'mechkills'}], mood:'stern',
+  brief:f => ['The Tessaract: their orbital station. Turrets on the roof and the outer ring, a hangar bay facing us, and a reactor at the back of that hangar.',
+    'Kill the turrets, deal with whatever they scramble, then fly into the hangar and set down. It has gravity plating, so your mech will hold. Clear the security bots, and the core’s shield drops.',
+    'Destroy the core. Then you will have seventy-five seconds to get two and a half kilometres away. Do not be inside when it goes.',
+    f.orbitClear ? 'Thanks to yesterday, they have hardly any fighters left to scramble.' : 'Expect a full fighter scramble when you hit the turrets.'],
+  radio:{start:'Lantern to Kestrel. The Tessaract, dead ahead. Turrets first.', done:{0:'Turrets down. Here comes the scramble.', 1:'Sky’s clear. Into the hangar, Kestrel. Slow and steady.', 3:'Bots are scrap. The core’s shield just dropped.'}},
+  out:{
+    perfect:{mood:'pleased', say:'The Tessaract is a cloud of hot metal and you’re not in it. And the scans you took inside tell us exactly where the Dominance keeps its shield generators.', then:'Engineers map the Dominance’s shield generators from your scans.', flags:{tessScans:1}, next:'v4n3'},
+    success:{mood:'pleased', say:'Station destroyed. You’re alive. That’s the order I like.', then:'The Varn battlecruiser Dominance moves to avenge the station.', next:'v4n3'},
+    fail:{mood:'angry', say:'We lost you in there and the station’s still up. The Dominance is coming, with the station feeding it fighters.', then:'The Tessaract still launches fighters for the Dominance.', flags:{tessIntact:1}, next:'v4n3'}
+  }};
+N.v4n3 = {vol:4, space:true, station:false, chapter:'Vol. 4 · Chapter 3 · Dominance', title:'Dominance', place:'high orbit', tier:3, pay:5.8, seed:449021, wing:null,
+  tasks:f => [{kind:'air', n:f.tessIntact ? 8 : 5, place:'the cruiser’s screen', at:{x:-800, z:-2200}, y:220},
+    {kind:'cruiser', n:1, place:'high orbit', at:{x:600, z:800}, hpMul:f.tessScans ? 0.9 : 1, genMul:f.tessScans ? 0.65 : 1, launchMul:f.tessIntact ? 0.7 : 1, cap:f.orbitClear ? 3 : f.tessIntact ? 6 : 4, vesper:!!f.vesperAlive}],
+  sides:[{key:'hull'}, {key:'wingman'}], mood:'stern',
+  brief:f => ['The Dominance: a Varn battlecruiser, four hundred metres long, and the last thing they have in orbit. It’s coming for the Bastion’s boosters, and then for us.',
+    'It sits inside a shield bubble fed by three generators on its back. Kill the generators and the hull is yours. Its turrets and missile racks will make that hard.',
+    'It carries a spinal cannon through the bow. When the bow starts to glow, get out of its line. Anything in that beam does not come back.',
+    f.tessScans ? 'Your scans from the Tessaract showed us where to hit the generators. They’ll go down faster.' : f.tessIntact ? 'The station is still launching fighters for it. Expect company.' : `${cs()}. Last fight. Bring her home.`],
+  radio:{start:'Lantern to all flights. Last one. Make it count.', done:{0:'Screen’s broken. The Dominance is turning toward you.'}},
+  out:{
+    perfect:{mood:'pleased', say:'The Dominance is gone, the Varn have nothing left in the sky or above it, and you did it without a scratch on your wingman. I’m going to need a bigger medal.', next:'end:v4flawless'},
+    success:{mood:'pleased', say:'The Dominance is scrap. The war is over. Really over this time. Come home.', next:'end:v4victory'},
+    fail:{mood:'angry', say:'The Dominance got through to the Bastion’s boosters. We’re grounded, but we’re alive. We go again.', next:'end:v4lost'}
+  }};
 for (const id in N) N[id].id = id;
 
 G.ENDINGS = {
@@ -361,6 +406,12 @@ G.ENDINGS = {
     'The Bastion’s crew paints a third mark under your canopy.', 'Arkwright: “Three wars. Same pilot. I’m having it engraved on something.”']},
   v3lost:{title:'Ashes on the Water', grade:'Defeat', mood:'angry', vol:3, text:() => ['The Harbinger burns the home port and turns north, untouched.',
     'The Bastion slips out with the fleet and waits for another chance.', 'Arkwright: “It can be hurt. You hurt it. Next time, it falls.”']},
+  v4flawless:{title:'Quiet Orbit', grade:'Flawless victory', mood:'pleased', vol:4, text:() => ['The Dominance breaks up over the dark side of Halcyon. Its pieces burn up as shooting stars for a week.',
+    'The Varn sign a treaty that keeps them out of the sky, and above it, for good.', 'Arkwright hangs a photo of the station going up in the wardroom. Your Kestrel is in the corner of it, already leaving.']},
+  v4victory:{title:'Fire in the Sky', grade:'Victory', mood:'pleased', vol:4, text:() => ['With the Tessaract and the Dominance gone, the Varn war is over.',
+    'The Bastion’s crew paints a fourth mark under your canopy: a small star.', 'Arkwright: “Four wars. I’ve stopped counting. Go to bed.”']},
+  v4lost:{title:'Long Night', grade:'Defeat', mood:'angry', vol:4, text:() => ['The Dominance holds orbit. The Republic is grounded under its guns.',
+    'But the Kestrel came home, and the engineers are already building more boosters.', 'Arkwright: “We got up there once. We’ll do it again.”']},
   retreat:{title:'The Southern Islands', grade:'Defeat', mood:'angry', text:() => ['The Bastion limps south with what is left of the fleet. The northern archipelago falls under Varn control.',
     'The war isn’t over. It just isn’t going your way.', 'Arkwright: “We regroup, we rearm, and we go back. You’re flying lead.”']}
 };
@@ -378,8 +429,8 @@ G.storyMission = id => {
   const sides = node.sides.map(s => ({key:s.key, param:s.param || 0, cash:Math.round(reward*0.12/50)*50, xp:Math.round(xp*0.15)}));
   const wing = node.wing || G.activeWing();
   return {id:'story-' + id, type:'ops', story:id, tier, n:tasks.length, tasks, place:node.place, city:'', reward, xp, sides, seed:node.seed,
-    title:node.title, tag:node.chapter, wing, brief:node.brief(f).map(sub).join(' '), briefLines:node.brief(f).map(sub),
-    goal:`${tasks.length} waypoints, then return to the Bastion`, perfectBonus:Math.round(reward*0.5/50)*50};
+    title:node.title, tag:node.chapter, wing, brief:node.brief(f).map(sub).join(' '), briefLines:node.brief(f).map(sub), space:!!node.space, station:!!node.station, startAt:node.startAt,
+    goal:node.space ? `${tasks.length} objectives in orbit` : `${tasks.length} waypoints, then return to the Bastion`, perfectBonus:Math.round(reward*0.5/50)*50};
 };
 G.storyGrade = (success, sideResults) => !success ? 'fail' : sideResults.every(x => x) ? 'perfect' : 'success';
 G.storyOutcome = (id, grade) => { const o = N[id].out[grade]; return Object.assign({}, o, {say:sub(o.say), then:o.then ? sub(o.then) : ''}); };
@@ -395,8 +446,8 @@ G.storyCommit = (id, grade) => {
 };
 G.storyReset = () => { G.save.story = G.newStory(); G.persist(); };
 /* Volume 2 starts from a finished Volume 1 (keeping its roster and flags) or replays from its own first chapter. */
-G.VOL_START = {2:'v2n1', 3:'v3n1'};
-G.VOL_FLAGS = {2:['v2intel', 'skyEarly', 'yardBurned', 'fuelSafe', 'convoyLost', 'corvidDown', 'corvidAlive'], 3:['v3intel', 'harbEarly', 'foundryBurned', 'escortsBroken', 'cityLost', 'lancerDown', 'lancerAlive']};
+G.VOL_START = {2:'v2n1', 3:'v3n1', 4:'v4n1'};
+G.VOL_FLAGS = {2:['v2intel', 'skyEarly', 'yardBurned', 'fuelSafe', 'convoyLost', 'corvidDown', 'corvidAlive'], 3:['v3intel', 'harbEarly', 'foundryBurned', 'escortsBroken', 'cityLost', 'lancerDown', 'lancerAlive'], 4:['orbitClear', 'vesperAlive', 'tessScans', 'tessIntact']};
 G.storyVol = n => { const st = G.save.story || (G.save.story = G.newStory()); st.node = G.VOL_START[n]; st.ending = null; st.vol = n;
   st.log = st.log.filter(l => { const v = G.STORY[l.node] && G.STORY[l.node].vol; return !v || v < n; });
   for (const k of G.VOL_FLAGS[n]) delete st.flags[k]; G.persist(); };
