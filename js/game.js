@@ -24,7 +24,7 @@ G.Game = class {
     this.ents = []; this.bullets = []; this.missiles = []; this.flares = []; this.civGroups = []; this.waypoints = [];
     this.ping = null; this.wave = null; this.aceT = -1; this.center = L.center;
     this.stats = {kills:0, killsMech:0, melee:0, cash:0, xp:0, collat:0, missiles:0, aaside:0, aces:0};
-    this.timers = []; this.objDone = 0; this.objTotal = m.n; this.time = 0; this.complete = false; this.over = false; this.endT = -1; this.rescue = null;
+    this.timers = []; this.pickups = []; this.objDone = 0; this.objTotal = m.n; this.time = 0; this.complete = false; this.over = false; this.endT = -1; this.rescue = null;
     if (L.carrier) { this.world.carrier = G.CARRIER; this.carrierMesh = G.buildCarrier(); this.carrierMesh.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true; }); scene.add(this.carrierMesh); }
     this.player = new G.Player(this); this.wing = new G.Wingman(this);
     this.marks = [];
@@ -74,6 +74,7 @@ G.Game = class {
     this.updateBullets(dt); this.updateMissiles(dt); this.updateBombs(dt); this.updateFlares(dt);
     this.fx.update(dt); this.tracers.draw(this.bullets);
     if (this.skyFall) G.skyFall(this, dt);
+    G.updatePickups(this, dt); G.deckRepair(this, dt); G.xray(this, dt);
     for (let i = this.dying.length - 1; i >= 0; i--) {
       const d = this.dying[i]; d.t += dt; d.U.mixer.update(dt);
       if (d.t > 1.2 && !d.charred) { d.charred = true; d.mesh.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) { m.color.multiplyScalar(0.28); if (m.emissive) m.emissive.setHex(0); } }); }
@@ -261,6 +262,7 @@ G.Game = class {
     const s = {air:1.6, ground:1.3, mech:1.7, struct:2.4, building:2.0}[e.cls] || 1;
     const c = e.pos.clone(); c.y += e.cy;
     this.fx.explosion(c, s); G.audio.boom(c, s);
+    if (e.team === 'enemy' && !e.part) G.maybeDrop(this, e, c);
     if (e.part) { e.mesh.traverse(o => { if (o.isMesh) o.material = CHAR(); }); if (e.mesh.userData.head) e.mesh.userData.head.rotation.x = 0.6;   // wrecked part stays on the hull, smoking
       this.fx.burner(c, e.type === 'skyengine' ? 200 : 60);
       if (e.type === 'skyengine' && e.carrier && e.carrier.alive) { const n = e.carrier.parts.filter(p => p.type === 'skyengine' && p.alive).length; G.hud.flash(n ? `ENGINE DOWN · ${n} LEFT` : 'LAST ENGINE DOWN'); } }
@@ -430,6 +432,9 @@ G.hud.flash('THE HARBINGER IS DOWN');       e.mesh.traverse(o => { if (o.isMesh)
     const r = this.renderer; r.render(this.scene, this.camera);
     const P = this.player, F = P && P.F, k = F && P.mode === 'mech' && !this.over ? (F.shieldK || 0) : 0;
     if (k > 0.02 && F.P.shield) this.renderXray(k);
+    if (this.xrOn) {   // enemy outlines (layer 1) go on last, over the shield's scan view and everything else
+      const ac = r.autoClear, su = r.shadowMap.autoUpdate; r.autoClear = false; r.shadowMap.autoUpdate = false;
+      this.camera.layers.set(1); r.render(this.scene, this.camera); this.camera.layers.set(0); r.autoClear = ac; r.shadowMap.autoUpdate = su; }
   }
   /* Raised shield: the solid shield stays where it is, and the part of the view it blocks is redrawn as a
      radar-style polygon view of what's behind it (terrain and buildings in cyan, enemies in red). */
@@ -502,6 +507,75 @@ G.hud.flash('THE HARBINGER IS DOWN');       e.mesh.traverse(o => { if (o.isMesh)
   dispose(){
     this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     this.scene = null;
+  }
+};
+
+
+/* ---------- Field repairs ----------
+   Repair canisters: a destroyed supply depot or command post always leaves one, anything else sometimes (bosses always).
+   A canister floats where the wreck fell under a tall green beacon for 50 s; fly or walk through it (within 45 m) to restore
+   30% of the hull. Each pilot sees and collects their own (in co-op the guest's game drops its own when the host reports a kill).
+   Deck repair: hover or stand within 600 m of the Bastion, below 300 m, and the deck crews patch 6% of the hull a second. */
+const PICK_GEO = {}, PV = new V3();
+G.maybeDrop = (game, e, at) => {
+  const always = /^(depot|command)$/.test(e.type) || e.bossBar || e.boss;
+  const chance = always ? 1 : e.cls === 'air' ? 0.1 : e.cls === 'struct' || e.cls === 'building' ? 0.3 : 0.14;
+  if (Math.random() > chance) return;
+  if (!PICK_GEO.box) { PICK_GEO.box = new THREE.BoxGeometry(3.2, 2.2, 3.2); PICK_GEO.band = new THREE.BoxGeometry(3.3, 0.5, 3.3); PICK_GEO.beam = new THREE.CylinderGeometry(0.7, 0.7, 160, 8, 1, true);
+    PICK_GEO.mBox = new THREE.MeshStandardMaterial({color:0xdfe6e2, roughness:0.5, metalness:0.3}); PICK_GEO.mBand = new THREE.MeshBasicMaterial({color:0x4dff8a});
+    PICK_GEO.mBeam = new THREE.MeshBasicMaterial({color:0x4dff8a, transparent:true, opacity:0.28, depthWrite:false, blending:THREE.AdditiveBlending}); }
+  const g = new THREE.Group(), box = new THREE.Mesh(PICK_GEO.box, PICK_GEO.mBox); g.add(box); g.add(new THREE.Mesh(PICK_GEO.band, PICK_GEO.mBand));
+  const beam = new THREE.Mesh(PICK_GEO.beam, PICK_GEO.mBeam); beam.position.y = 80; g.add(beam);
+  const W = game.world, gy = Math.max(W.height(at.x, at.z), 0), y = e.cls === 'air' ? Math.max(at.y, gy + 40) : gy + 6;
+  g.position.set(at.x, y, at.z); game.scene.add(g); game.pickups.push({g, pos:g.position, t:0, life:50, amt:0.3});
+};
+G.updatePickups = (game, dt) => {
+  const P = game.player;
+  for (const k of game.pickups) {
+    k.t += dt; k.g.rotation.y += dt*1.5; k.g.children[0].position.y = Math.sin(k.t*2)*0.6;
+    if (k.t > k.life - 5) k.g.visible = Math.floor(k.t*6) % 2 === 0;   // blinks before it expires
+    if (P.alive && P.pos.distanceTo(k.pos) < 45) {
+      k.done = true; const add = P.maxHp*k.amt; P.hp = Math.min(P.maxHp, P.hp + add);
+      G.hud.flash(`HULL REPAIRED +${Math.round(k.amt*100)}%`); G.audio.tone(660, 0.18, 'sine', 0.07, 990); G.audio.tone(990, 0.22, 'sine', 0.05, 1320);
+    }
+    if (k.done || k.t > k.life) game.scene.remove(k.g);
+  }
+  game.pickups = game.pickups.filter(k => !k.done && k.t <= k.life);
+};
+G.deckRepair = (game, dt) => {
+  const P = game.player, C = G.CARRIER; if (!P.alive || !game.carrierMesh || P.mode === 'jet' || P.hp >= P.maxHp || game.over) { game.deckFix = false; return; }
+  const near = Math.hypot(P.pos.x - C.x, P.pos.z - C.z) < 600 && P.pos.y < C.deck + 300;
+  if (!near) { game.deckFix = false; return; }
+  P.hp = Math.min(P.maxHp, P.hp + P.maxHp*0.06*dt);
+  if (!game.deckFix) { game.deckFix = true; G.hud.flash('DECK CREWS REPAIRING · HOLD STATION'); }
+  if (P.hp >= P.maxHp) G.hud.flash('HULL FULLY REPAIRED');
+};
+
+/* ---------- Shield x-ray ----------
+   With the mech's shield raised it fills the view ahead, so every enemy within 1.6 km is drawn as a glowing red edge
+   outline on top of everything. Edge lines are built once per enemy (a few per frame), shared per geometry, and fade
+   with the shield. */
+const XRM = new THREE.LineBasicMaterial({color:0xff5a3c, transparent:true, opacity:0, depthTest:false, depthWrite:false, fog:false});
+G.xray = (game, dt) => {
+  const P = game.player, on = P.alive && P.mode === 'mech' && P.block > 0.3;
+  const want = on ? Math.min(1, P.block*1.2) : 0; XRM.opacity += (want*0.9 - XRM.opacity)*Math.min(1, dt*10);
+  if (XRM.opacity < 0.02 && !on) { if (game.xrOn) { for (const e of game.ents) if (e.xr) for (const l of e.xr) l.visible = false; game.xrOn = false; } return; }
+  game.xrOn = true; let built = 0;
+  for (const e of game.ents) {
+    if (!e.alive || e.team !== 'enemy' || !e.mesh) { if (e.xr) for (const l of e.xr) l.visible = false; continue; }
+    const vis = on && PV.copy(e.pos).sub(P.pos).lengthSq() < 1600*1600;
+    if (vis && !e.xr && built < 3) {
+      built++; e.xr = [];
+      e.mesh.traverse(o => {
+        if (!o.isMesh || o.isSkinnedMesh || !o.geometry || o.material === XRM) return;
+        const gd = o.geometry; if (!gd.userData.edges) gd.userData.edges = new THREE.EdgesGeometry(gd, 32);
+        const l = new THREE.LineSegments(gd.userData.edges, XRM); l.layers.set(1); l.frustumCulled = false; l.raycast = () => {}; o.add(l); e.xr.push(l);
+      });
+      if (!e.xr.length) {   // animated (skinned) models: a box around them instead
+        const B = new THREE.Box3().setFromObject(e.mesh), sz = B.getSize(new V3()), l = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(sz.x, sz.y, sz.z)), XRM);
+        l.layers.set(1); l.frustumCulled = false; B.getCenter(l.position); e.mesh.worldToLocal(l.position); l.scale.divide(e.mesh.scale); e.mesh.add(l); e.xr.push(l); }
+    }
+    if (e.xr) for (const l of e.xr) l.visible = vis;
   }
 };
 })();

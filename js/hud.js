@@ -458,7 +458,7 @@ const H = G.hud = {
       else if (P.mode === 'jet' && P.stall > 0.3) warn = 'STALL · THROTTLE UP OR NOSE DOWN';
       else if (P.lockedBy > 0) warn = 'LOCK WARNING';
       else if (P.outAO) warn = Math.hypot(P.pos.x, P.pos.z) > 7100 ? 'AREA BOUNDARY · TURNING BACK' : 'LEAVING AREA OF OPERATIONS';
-      else if (P.hp/P.maxHp < 0.25) { warn = 'HULL CRITICAL'; wc = RED; }
+      else if (P.hp/P.maxHp < 0.25) { warn = game.pickups && game.pickups.length ? 'HULL CRITICAL · GREEN BEACON = REPAIRS' : 'HULL CRITICAL'; wc = RED; }
       this.ralt(x, P, cx, cy, Hh, W, col);
     }
     if (P.alive && P.gpws === 2 && (performance.now() % 500) < 330) {
@@ -689,6 +689,7 @@ const H = G.hud = {
     for (const g of game.civGroups) if (!g.done) { const [px, py, out] = place(g.pos.x, g.pos.z); glyph(px, py, 'mech', '#6dff9a', 9, out, 1); }
     for (const w of game.waypoints) if (!w.done) { const [px, py, out] = place(w.pos.x, w.pos.z); glyph(px, py, 'mech', AMB, 9, out, 1); }
     if (game.ping) { const [px, py, out] = place(game.ping.pos.x, game.ping.pos.z); glyph(px, py, 'x', '#6dff9a', 8, out, 1); }
+    for (const k of game.pickups || []) { const [px, py, out] = place(k.pos.x, k.pos.z); if (!out) { glyph(px, py, 'ring', '#4dff8a', 7, false, 1); glyph(px, py, 'dot', '#4dff8a', 3, false, 1); } }   // repair canisters
     for (const mk of game.marks || []) { const [px, py, out] = place(mk.pos.x, mk.pos.z); glyph(px, py, 'mech', mk.color, 9, out, 1); }
     for (const e of game.ents) {
       if (!e.alive || e.team !== 'enemy') continue;

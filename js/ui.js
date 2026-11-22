@@ -435,13 +435,16 @@ const MANUAL = `
       <dt>Mouse</dt><dd>The mouse is captured during a sortie. In hover and mech it turns the view directly; in the jet it moves the stick. <kbd>Esc</kbd> pauses and frees the cursor. Mouse sensitivity is in the pause menu.</dd>
       <dt>Reavers</dt><dd>Varn melee walkers that sprint and leap at you, then slash with arm blades. Their plating soaks about 70% of gunfire and missiles, but blades hit them in full. Raise the shield (right click) when one winds up, its visor flares, or hit it with the sword during the wind-up to stagger it. Cities are full of them, ground missiles are off-limits over civilians, and blade kills in a city pay double.</dd>
       <dt>Ground strike</dt><dd>Jump (hold a direction to leap that way), then left click in the air with the sword drawn: the mech plunges its blade into the ground and the shockwave hits everything within about 40 m. Landings from jump-pack height only jolt the frame; falls after transforming high in the air still hurt.</dd>
-      <dt>Right click</dt><dd>Hold to raise the shield.</dd>
+      <dt>Right click</dt><dd>Hold to raise the shield. While it is up, enemies within 1.6 km show through it as red outlines.</dd>
       <dt>Advantages</dt><dd>On or near the ground, anti-air guns and SAMs can't track you and missiles lose lock, but within about 650 m their crews open fire with machine guns. Takes 40% less damage. Gun pod is braced: +40% damage, much tighter spread. Civilians board twice as fast.</dd></dl></section>
     <section><h3>Wingman</h3><dl>
       <dt><kbd>Z</kbd></dt><dd>Attack my target.</dd>
       <dt><kbd>X</kbd></dt><dd>Cover me. Engages threats near you.</dd>
       <dt><kbd>G</kbd></dt><dd>Ping the map where you are aiming. Your wingman moves there and engages.</dd>
       <dt><kbd>B</kbd></dt><dd>Form up on me.</dd></dl></section>
+    <section><h3>Field repairs</h3><dl>
+      <dt>Repair canisters</dt><dd>Wrecks sometimes leave a canister under a tall green beacon (supply depots, command posts and bosses always do). Fly or walk through it to restore 30% of your hull. It lasts 50 seconds.</dd>
+      <dt>Deck repair</dt><dd>Hover or stand within 600 m of the Bastion and its deck crews patch your hull while you stay.</dd></dl></section>
     <section><h3>Controller</h3><dl>
       <dt>Left stick</dt><dd>Jet: fly (pull back to climb). Hover and mech: move.</dd>
       <dt>Right stick</dt><dd>Jet: throttle (up/down) and rudder. Hover and mech: look and aim.</dd>
