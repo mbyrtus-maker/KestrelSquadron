@@ -43,7 +43,7 @@ G.Player = class {
       this.speed = Math.max(hs, 85);
       this.pitch = clamp(Math.atan2(this.vel.y, Math.max(hs, 1)), -0.5, 0.5);
       if (this.agl < 25) { this.pitch = Math.max(this.pitch, 0.32); this.pos.y = Math.max(this.pos.y, this.gh + 8); }
-      this.throttle = Math.max(this.throttle, 0.55); this.locks.clear(); this.camPitch = 0; this.yawRate = this.pitchRate = 0;
+      this.throttle = Math.max(this.throttle, 0.55); this.locks.clear(); this.camPitch = 0; this.yawRate = this.pitchRate = 0; this.rb = 0;
     } else {
       if (prev === 'jet') { this.vel.y -= m === 'hover' ? 16 : 6; this.camPitch = clamp(this.pitch*0.6, -0.6, 0.6); }
       if (m === 'mech') { this.onGround = false; this.jumpT = 1; this.airPeak = this.pos.y; this.dropped = true; this.slam = 0; }
@@ -81,10 +81,15 @@ G.Player = class {
       const auth = clamp((this.speed - 55)/60, 0.35, 1), stall = clamp((85 - this.speed)/30, 0, 1);
       // Bank-and-pull: sideways input banks hard (up to ~80 deg at the screen edge) and turns; the pitch input acts in the
       // cockpit frame, so pulling while banked tightens the turn toward the low wing instead of climbing.
-      this.roll += (clamp(turnIn*1.45, -1.4, 1.4) - this.roll)*Math.min(1, dt*3.4);
+      // rb is the roll the jet settles to with no stick: 0 upright, pi inverted (after going over the top of a loop)
+      this.rb = this.rb || 0;
+      if (Math.abs(this.rb) > 1 && Math.abs(pitchIn) < 0.15) { this.invT = (this.invT || 0) + dt; if (this.invT > 1.2) this.rb = 0; } else this.invT = 0;   // let go while inverted: half-roll upright
+      this.roll += wrap(this.rb + clamp(turnIn*1.45, -1.4, 1.4) - this.roll)*Math.min(1, dt*3.4); this.roll = wrap(this.roll);
       const cr = Math.cos(this.roll), sr = Math.sin(this.roll);
       this.yaw -= (this.yawRate + this.pitchRate*sr*0.9)*auth*dt;
-      this.pitch = clamp(this.pitch + this.pitchRate*cr*auth*dt - stall*0.6*dt, -1.35, 1.35);
+      this.pitch += this.pitchRate*cr*auth*dt - stall*0.6*dt;
+      // past vertical: the same attitude written the other way up (heading turned round, rolled inverted), so a held pull flies a full loop
+      if (Math.abs(this.pitch) > Math.PI/2) { this.pitch = Math.sign(this.pitch)*Math.PI - this.pitch; this.yaw = wrap(this.yaw + Math.PI); this.roll = wrap(this.roll + Math.PI); this.rb = wrap(this.rb + Math.PI); }
       this.throttle = clamp(this.throttle + (K('KeyW') - K('KeyS'))*0.5*dt, 0, 1);
       const target = (75 + this.throttle*145)*st.speed*(this.boost ? 1.32 : 1);
       this.speed += clamp(target - this.speed, -22*dt, 28*dt);
@@ -96,7 +101,7 @@ G.Player = class {
       thrust = 0.3 + this.throttle*0.45 + (this.boost ? 0.45 : 0);
       if (this.pos.y < gh + clr) {
         const impact = this.speed*Math.max(0.25, -Math.sin(this.pitch));
-        this.damage(impact*4, null, 'crash'); this.pos.y = gh + clr + 1.5; this.pitch = Math.max(this.pitch, 0.3); this.shake += 1.2;
+        this.damage(impact*4, null, 'crash'); this.pos.y = gh + clr + 1.5; this.pitch = Math.max(this.pitch, 0.3); this.rb = 0; this.shake += 1.2;
         G.hud.flash('TERRAIN IMPACT'); g.fx.explosion(this.pos, 0.6);
       }
       root.position.copy(this.pos); root.rotation.set(-this.pitch, this.yaw, this.roll, 'YXZ');
@@ -281,7 +286,7 @@ G.Player = class {
     const dC = Math.hypot(this.pos.x, this.pos.z);
     if (dC > 7100) {
       const k = clamp((dC - 7100)/200, 0, 1);
-      if (this.mode === 'jet') { const d = wrap(Math.atan2(-this.pos.x, -this.pos.z) - this.yaw); this.yaw += clamp(d, -1, 1)*k*1.8*dt; this.pitch += (0.12 - this.pitch)*k*dt; }
+      if (this.mode === 'jet') { const d = wrap(Math.atan2(-this.pos.x, -this.pos.z) - this.yaw); this.yaw += clamp(d, -1, 1)*k*1.8*dt; this.pitch += (0.12 - this.pitch)*k*dt; this.rb = 0; }
       else { const nx = this.pos.x/dC, nz = this.pos.z/dC, out = this.vel.x*nx + this.vel.z*nz; if (out > 0) { this.vel.x -= nx*out*k; this.vel.z -= nz*out*k; } }
     }
     if (I.pressed.has('KeyM')) { G.audio.engOn = G.audio.engOn === false; G.hud.radio('HUD', G.audio.engOn === false ? 'Engine sound off (M).' : 'Engine sound on (M).'); }
