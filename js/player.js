@@ -523,7 +523,10 @@ G.Player = class {
     const w = this.w.missile, g = this.g, side = i % 2 ? 1 : -1, jet = this.mode === 'jet';
     const p = this.F.world(side > 0 ? 'wingL' : 'wingR', side*(2.4 + (i % 3)*0.6), -0.6, rnd()*0.8, new V3());
     const v0 = jet ? this.speed : Math.hypot(this.vel.x, this.vel.z);
-    g.launchMissile(p, this.launchDir(i), tgt, {team:'player', by:'player', speed:v0 + (jet ? 20 : 90), max:w.speed + v0*0.3, turn:w.turn, dmg:w.dmg*this.st.dmg, groundMul:w.groundMul || 1, life:9});
+    // Kinematics: a missile off a fast jet inherits its speed and flies far; one off a hovering Kestrel starts slow,
+    // builds speed lazily, tops out lower and burns out sooner (about 60% of the reach), and turns wide until it's fast.
+    g.launchMissile(p, this.launchDir(i), tgt, jet ? {team:'player', by:'player', speed:v0 + 20, max:w.speed + v0*0.5, accel:220, turn:w.turn, dmg:w.dmg*this.st.dmg, groundMul:w.groundMul || 1, life:9, kin:true}
+      : {team:'player', by:'player', speed:v0 + 40, max:w.speed*0.8 + v0*0.3, accel:110, turn:w.turn*0.6, dmg:w.dmg*this.st.dmg, groundMul:w.groundMul || 1, life:6.5, kin:true});
     const before = this.mis; this.mis--; g.stats.missiles++;
     G.audio.missile(); this.F.setMissiles(this.mis/this.maxMis);
     const low = Math.max(2, Math.ceil(this.maxMis*0.25));

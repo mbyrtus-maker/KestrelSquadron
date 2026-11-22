@@ -597,6 +597,24 @@ G.updateEnemy = function(game, e, dt){
       if (!e.dir) e.dir = new V3(Math.sin(e.yaw), 0, Math.cos(e.yaw));
       const tgt = pickTarget(game, e, 6000, false);
       const des = tmp;
+      // Missile defence: a Kestrel missile closing inside 450 m makes the fighter break hard across its path, and it may
+      // pop flares. A fast missile off a jet usually still gets there; a slow one off a hovering Kestrel usually doesn't.
+      if (e.evCd > 0) e.evCd -= dt;
+      else for (const m of game.missiles) {
+        if (m.team !== 'player' || m.target !== e) continue;
+        const dm = m.pos.distanceTo(e.pos); if (dm > 450 || dm < 25) continue;
+        e.evCd = 4 + Math.random()*2; e.evading = 1.8; e.breakT = 1.8; e.tRate = Math.max(e.tRate || 0, 0.9);
+        const side = Math.random() < 0.5 ? 1 : -1;
+        e.breakDir = new V3(-m.dir.z*side, (Math.random() - 0.3)*0.5, m.dir.x*side).normalize();
+        const slow = m.speed < 390, pf = (e.ace ? 0.55 : 0.3)*(slow ? 1.7 : 1);
+        if (Math.random() < pf) {
+          const start = game.flares.length;
+          for (let k = 0; k < 4; k++) game.flares.push({pos:e.pos.clone(), vel:e.vel.clone().multiplyScalar(0.3).add(new V3((Math.random() - 0.5)*60, -15 - Math.random()*20, (Math.random() - 0.5)*60)), life:3, alive:true});
+          for (const m2 of game.missiles) if (m2.team === 'player' && m2.target === e && Math.random() < (slow ? 0.9 : 0.6)) m2.target = game.flares[start + Math.floor(Math.random()*4)];
+        }
+        break;
+      }
+      if (e.evading > 0) e.evading -= dt;
       if (e.breakT > 0) { e.breakT -= dt; des.copy(e.breakDir); }
       else if (tgt) {
         des.copy(tgt.pos).addScaledVector(tgt.vel, 0.8).sub(e.pos);
@@ -620,7 +638,7 @@ G.updateEnemy = function(game, e, dt){
       if (e.pos.y > gh + 1400) des.y = Math.min(des.y, -0.2);
       des.y = Math.max(-0.45, Math.min(0.6, des.y)); des.normalize();
       // Turn like an aircraft: limited turn rate that builds up and eases off, no instant flicks.
-      const prev = tmp3.copy(e.dir), ang = e.dir.angleTo(des), maxRate = e.pullUp ? 1.1 : e.ace ? 0.62 : 0.46;
+      const prev = tmp3.copy(e.dir), ang = e.dir.angleTo(des), maxRate = e.pullUp ? 1.1 : e.evading > 0 ? (e.ace ? 1.15 : 0.95) : e.ace ? 0.62 : 0.46;
       const wantRate = Math.min(maxRate, ang*1.1);
       e.tRate = (e.tRate || 0) + (wantRate - (e.tRate || 0))*Math.min(1, dt*1.1);
       const maxA = e.tRate*dt;
@@ -640,10 +658,10 @@ G.updateEnemy = function(game, e, dt){
       if (tgt && !e.noFire) {
         const vis = game.sees(e, tgt);
         tmp2.subVectors(tgt.pos, e.pos); const d = tmp2.length(), a = vis ? e.dir.angleTo(tmp2) : 9;
-        const duck = tgt === P && P.mode !== 'jet' && !P.onGround;
-        if (a < (duck ? 0.1 : 0.07) && d < (duck ? 900 : 720)) { e.burstCd -= dt; if (e.burstCd <= 0) { e.burstCd = 0.13; shoot(game, e, e.pos.clone().addScaledVector(e.dir, 6), tgt, 950, 6.5, {err:6, color:0xff7766, len:5, w:0.4, lead:1}); } }
+        const duck = tgt === P && P.mode !== 'jet' && !P.onGround, dk = duck ? 1.2 : 1;   // a hovering Kestrel takes a little more from fighters
+        if (a < (duck ? 0.1 : 0.07) && d < (duck ? 900 : 720)) { e.burstCd -= dt; if (e.burstCd <= 0) { e.burstCd = 0.13; shoot(game, e, e.pos.clone().addScaledVector(e.dir, 6), tgt, 950, 6.5*dk, {err:6, color:0xff7766, len:5, w:0.4, lead:1}); } }
         if (a < 0.5 && d > 350 && d < 1700) { e.lockT += dt*(tgt === P && jam ? 0.5 : 1)*(duck ? 1.8 : 1); if (tgt === P) P.lockedBy++; } else e.lockT = Math.max(0, e.lockT - dt);
-        if (e.lockT > 2.6 && e.cd <= 0) { game.launchMissile(e.pos.clone().addScaledVector(e.dir, 4), e.dir, tgt, {team:'enemy', speed:spd, max:370, turn:2.1, dmg:150*e.dmgMul, life:10}); e.cd = 13; e.lockT = 0; }
+        if (e.lockT > 2.6 && e.cd <= 0) { game.launchMissile(e.pos.clone().addScaledVector(e.dir, 4), e.dir, tgt, {team:'enemy', speed:spd, max:370, turn:2.1, dmg:150*e.dmgMul*dk, life:10}); e.cd = 13; e.lockT = 0; }
       }
       break;
     }

@@ -58,7 +58,7 @@ G.Game = class {
   launchMissile(pos, dir, target, o){
     const mesh = G.buildMissile(o.team === 'enemy'); mesh.position.copy(pos); this.scene.add(mesh);
     this.missiles.push({pos:pos.clone(), dir:dir.clone().normalize(), speed:o.speed, max:o.max, turn:o.turn, target, dmg:o.dmg, team:o.team,
-      by:o.by || 'enemy', life:o.life, groundMul:o.groundMul || 1, agm:o.agm || null, mesh, t:0});
+      by:o.by || 'enemy', life:o.life, groundMul:o.groundMul || 1, agm:o.agm || null, mesh, t:0, accel:o.accel || 220, kin:!!o.kin});
     if (o.agm) { mesh.scale.setScalar(1.6); mesh.traverse(x => { if (x.isMesh && x.material.color && x.material.color.getHex() === 0xd9d4c4) { x.material = x.material.clone(); x.material.color.setHex(0x5b6150); } }); }
     if (o.team === 'enemy') G.audio.shot(pos, 'missile');
   }
@@ -137,12 +137,13 @@ G.Game = class {
         if (tg.vel) tC.addScaledVector(tg.vel, Math.min(1.2, dist/Math.max(m.speed, 1))*0.6);
         tD.subVectors(tC, m.pos).normalize();
         let turn = m.turn*(m.t < 0.25 ? 0.3 : 1);
+        if (m.kin) turn *= Math.max(0.35, Math.min(1, m.speed/(m.max*0.75)));   // a slow missile turns wide: full agility only once it's up to speed
         if (m.team === 'enemy' && tg === P && P.jam) turn *= 0.62;
         const ang = m.dir.angleTo(tD), mx = turn*dt;
         if (ang > mx) m.dir.lerp(tD, mx/ang).normalize(); else m.dir.copy(tD);
         if (m.team === 'enemy' && tg === P) incoming++;
       }
-      m.speed = Math.min(m.max, m.speed + 220*dt);
+      m.speed = Math.min(m.max, m.speed + m.accel*dt);
       m.pos.addScaledVector(m.dir, m.speed*dt);
       m.mesh.position.copy(m.pos); m.mesh.lookAt(tB.copy(m.pos).add(m.dir));
       this.fx.trail(m.pos, m.team === 'enemy' ? 1.2 : 0.9);
