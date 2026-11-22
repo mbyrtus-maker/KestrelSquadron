@@ -313,7 +313,7 @@ const H = G.hud = {
         const ppd = Hh/cam.fov;
         x.save(); x.translate(cx, cy); x.rotate(-P.roll); x.beginPath(); x.rect(-260, -Hh*0.32, 520, Hh*0.64); x.clip();
         x.globalAlpha = 0.75;
-        for (let a = -80; a <= 80; a += 10) {
+        for (let a = -80; a <= 80 && !game.world.space; a += 10) {   // no pitch ladder in orbit: there's no horizon to measure from
           const y = (P.pitch/D - a)*ppd; if (Math.abs(y) > Hh*0.32) continue;
           x.setLineDash(a < 0 ? [8, 6] : []); x.beginPath();
           if (a === 0) { x.moveTo(-250, y); x.lineTo(-70, y); x.moveTo(70, y); x.lineTo(250, y); }
