@@ -103,7 +103,12 @@ G.spawnMission = function(game, L){
   if (game.m.type !== 'ops') return baseSpawnMission(game, L);
   const m = game.m, tier = m.tier, W = game.world, r = L.r;
   const around = (cx, cz, a0, a1) => { const a = r()*Math.PI*2, d = a0 + r()*(a1 - a0); return [cx + Math.sin(a)*d, cz + Math.cos(a)*d]; };
-  const sp = (type, cx, cz, a0, a1, o) => { let x, z; for (let i = 0; i < 14; i++) { [x, z] = around(cx, cz, a0, a1); if (W.height(x, z) > 3) break; } return G.spawn(game, type, x, z, o); };
+  // ground units never stand in the sea: landAt walks outward in rings from a spot until it finds dry ground (above 3 m)
+  const landAt = (x, z, max = 600) => { if (W.height(x, z) > 3) return [x, z];
+    for (let d = 15; d <= max; d += 15) for (let k = 0, n = Math.max(8, Math.round(d/8)); k < n; k++) { const a = k/n*Math.PI*2, px = x + Math.sin(a)*d, pz = z + Math.cos(a)*d; if (W.height(px, pz) > 3) return [px, pz]; }
+    return null; };
+  const sp = (type, cx, cz, a0, a1, o) => { let x, z; for (let i = 0; i < 20; i++) { [x, z] = around(cx, cz, a0, a1); if (W.height(x, z) > 3) return G.spawn(game, type, x, z, o); }
+    const L = landAt(x, z) || landAt(cx, cz, 1200) || [x, z]; return G.spawn(game, type, L[0], L[1], o); };
   const tag = (e, i) => { e.tag = 'obj'; e.task = i; return e; };
   for (const T of L.tasks) {
     const P = T.C, i = T.i;
@@ -126,8 +131,8 @@ G.spawnMission = function(game, L){
       case 'base': {
         const kinds = ['command','hangar','tower','depot','bunker','hangar','bunker','depot','tower'];
         const spots = [[0,0],[-95,45],[95,45],[0,-115],[-115,-80],[115,-80],[-45,130],[60,130],[160,-10]];
-        for (let k = 0; k < T.n; k++) { const s = spots[k % spots.length]; tag(G.spawn(game, kinds[k % kinds.length], P.x + s[0], P.z + s[1], {yaw: k % 2 ? 0 : Math.PI/2}), i); }
-        for (let k = 0; k < 1 + tier; k++) { const a = k/(1 + tier)*Math.PI*2; G.spawn(game, 'aa', P.x + Math.sin(a)*190, P.z + Math.cos(a)*190); }
+        for (let k = 0; k < T.n; k++) { const s = spots[k % spots.length], L = landAt(P.x + s[0], P.z + s[1], 300) || landAt(P.x, P.z, 1200) || [P.x + s[0], P.z + s[1]]; tag(G.spawn(game, kinds[k % kinds.length], L[0], L[1], {yaw: k % 2 ? 0 : Math.PI/2}), i); }
+        for (let k = 0; k < 1 + tier; k++) { const a = k/(1 + tier)*Math.PI*2, L = landAt(P.x + Math.sin(a)*190, P.z + Math.cos(a)*190, 160); if (L) G.spawn(game, 'aa', L[0], L[1]); }   // a flak gun with no dry ground near its spot is left out
         if (tier >= 2) sp('reaver', P.x, P.z, 40, 160);
         sp('tank', P.x, P.z, 60, 200); if (tier >= 2) sp('sam', P.x, P.z, 220, 280);
         break;
@@ -159,7 +164,7 @@ G.spawnMission = function(game, L){
           }
           tag(G.spawn(game, kinds[k % kinds.length], x, z), i);
         }
-        for (let k = 0; k < tier; k++) { const a = r()*6.28; G.spawn(game, 'reaver', P.x + Math.sin(a)*120, P.z + Math.cos(a)*120); }   // a roaming pack on top of the objectives
+        for (let k = 0; k < tier; k++) { const a = r()*6.28, L = landAt(P.x + Math.sin(a)*120, P.z + Math.cos(a)*120, 300); if (L) G.spawn(game, 'reaver', L[0], L[1]); }   // a roaming pack on top of the objectives
         break;
       }
     }

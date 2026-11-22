@@ -65,13 +65,17 @@ G.planMission = function(m){
   return L;
 };
 
+/* Dry ground near (x, z): walks outward in rings until the ground is above 3 m, or null within max metres. */
+G.landAt = (W, x, z, max = 600) => { if (W.height(x, z) > 3) return [x, z];
+  for (let d = 15; d <= max; d += 15) for (let k = 0, n = Math.max(8, Math.round(d/8)); k < n; k++) { const a = k/n*Math.PI*2, px = x + Math.sin(a)*d, pz = z + Math.cos(a)*d; if (W.height(px, pz) > 3) return [px, pz]; }
+  return null; };
 G.spawnMission = function(game, L){
   const m = game.m, n = m.n, r = L.r, C = L.center, tier = m.tier, W = game.world;
   const around = (cx, cz, a0, a1) => { const a = r()*Math.PI*2, d = a0 + r()*(a1 - a0); return [cx + Math.sin(a)*d, cz + Math.cos(a)*d]; };
   const sp = (type, cx, cz, a0, a1, o) => {
     let x, z;
-    for (let i = 0; i < 14; i++) { [x, z] = around(cx, cz, a0, a1); if (W.height(x, z) > 3 || type === 'fighter') break; }
-    return G.spawn(game, type, x, z, o);
+    for (let i = 0; i < 14; i++) { [x, z] = around(cx, cz, a0, a1); if (W.height(x, z) > 3 || type === 'fighter') return G.spawn(game, type, x, z, o); }
+    const L = G.landAt(W, x, z) || G.landAt(W, cx, cz, 1200) || [x, z]; return G.spawn(game, type, L[0], L[1], o);
   };
   const air = (type, cx, cz, tag) => { const [x, z] = around(cx, cz, 100, 500); return G.spawn(game, type, x, z, {alt:W.height(x, z) + 450 + r()*250, tag}); };
   game.objTotal = n;
@@ -91,8 +95,8 @@ G.spawnMission = function(game, L){
     case 'base': {
       const order = ['command', 'hangar', 'hangar', 'tower', 'depot', 'bunker', 'bunker', 'depot', 'bunker', 'tower', 'hangar', 'bunker'];
       const spots = [[0, 0], [-95, 45], [95, 45], [0, -115], [-115, -80], [115, -80], [-45, 130], [60, 130], [160, -10], [-160, -10], [0, 190], [-170, 100]];
-      for (let i = 0; i < n; i++) { const s = spots[i % spots.length]; G.spawn(game, order[i % order.length], C.x + s[0], C.z + s[1], {tag:'obj', yaw:(r() < 0.5 ? 0 : Math.PI/2)}); }
-      for (let i = 0; i < 2 + tier; i++) { const a = i/(2 + tier)*Math.PI*2; G.spawn(game, 'aa', C.x + Math.sin(a)*200, C.z + Math.cos(a)*200); }
+      for (let i = 0; i < n; i++) { const s = spots[i % spots.length], L = G.landAt(W, C.x + s[0], C.z + s[1], 300) || G.landAt(W, C.x, C.z, 1200) || [C.x + s[0], C.z + s[1]]; G.spawn(game, order[i % order.length], L[0], L[1], {tag:'obj', yaw:(r() < 0.5 ? 0 : Math.PI/2)}); }
+      for (let i = 0; i < 2 + tier; i++) { const a = i/(2 + tier)*Math.PI*2, L = G.landAt(W, C.x + Math.sin(a)*200, C.z + Math.cos(a)*200, 160); if (L) G.spawn(game, 'aa', L[0], L[1]); }   // no flak in the sea
       for (let i = 0; i < 1 + tier; i++) sp('tank', C.x, C.z, 60, 220);
       if (tier >= 2) sp('sam', C.x, C.z, 230, 300);
       if (tier === 3) { sp('mech', C.x, C.z, 50, 200); sp('mech', C.x, C.z, 50, 200); }
